@@ -70,41 +70,30 @@ def accelerator_api(device: str):
     return None
 
 
-def accelerator_device_arg(device: str):
-    return torch.device(device) if device.startswith(("cuda", "musa")) else None
-
-
 def device_sync(device: str) -> None:
     api = accelerator_api(device)
     synchronize = getattr(api, "synchronize", None)
     if callable(synchronize):
-        target = accelerator_device_arg(device)
-        synchronize(target) if target is not None else synchronize()
+        synchronize()
 
 
 def reset_peak_memory(device: str) -> None:
     api = accelerator_api(device)
     reset = getattr(api, "reset_peak_memory_stats", None)
     if callable(reset):
-        target = accelerator_device_arg(device)
-        reset(target) if target is not None else reset()
+        reset()
 
 
 def peak_memory_mb(device: str) -> float | None:
     api = accelerator_api(device)
     maximum = getattr(api, "max_memory_allocated", None)
-    if not callable(maximum):
-        return None
-    target = accelerator_device_arg(device)
-    value = maximum(target) if target is not None else maximum()
-    return float(value) / 1024 / 1024
+    return float(maximum()) / 1024 / 1024 if callable(maximum) else None
 
 
 def device_name(device: str) -> str:
     api = accelerator_api(device)
     getter = getattr(api, "get_device_name", None)
-    target = accelerator_device_arg(device)
-    return str(getter(target)) if callable(getter) and target is not None else device
+    return str(getter(0)) if callable(getter) else device
 
 
 def set_attn_mode(model, attn_mode: str) -> None:
@@ -134,17 +123,11 @@ def musa_wkv_route(model) -> dict:
     if not str(next(model.parameters()).device).startswith("musa"):
         return {}
     package = model.__class__.__module__.rsplit(".", 1)[0]
-    wkv = importlib.import_module(package + ".musa_wkv")
-    fused = importlib.import_module(package + ".musa_fused")
+    module = importlib.import_module(package + ".musa_wkv")
     return {
-        "musa_wkv_mode": wkv._mode(),
-        "musa_wkv_available": bool(wkv.musa_wkv_available(next(model.parameters()).device)),
-        "musa_wkv_module_loaded": wkv._MODULE is not None,
-        "musa_wkv_module_error": repr(wkv._MODULE_ERROR),
-        "musa_attn_shift_mix_enabled": os.environ.get("RWKV7_MUSA_ATTN_SHIFT_MIX", "0").strip().lower() in {"1", "true", "yes", "on"},
-        "musa_attn_shift_mix_module_loaded": fused._MODULE is not None,
-        "musa_attn_shift_mix_module_error": repr(fused._MODULE_ERROR),
-        "musa_attn_shift_mix_calls": int(fused._CALLS),
+        "musa_wkv_enabled": os.environ.get("RWKV7_MUSA_WKV", "1") not in {"0", "false", "False", "no", "off"},
+        "musa_wkv_module_loaded": module._MODULE is not None,
+        "musa_wkv_module_error": repr(module._MODULE_ERROR),
     }
 
 
@@ -256,7 +239,6 @@ def bench_official(args, dt):
     reset_peak_memory(args.device)
     # prefill (official torch path is sequential => slow; 1 timed run)
     m.forward(id_list[:8], None)
-    device_sync(args.device)
     t0 = time.time()
     logits = m.forward(id_list, None)
     logits = logits[0] if isinstance(logits, tuple) else logits
