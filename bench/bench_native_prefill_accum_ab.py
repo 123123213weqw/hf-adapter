@@ -146,7 +146,11 @@ def shape_tokens_for_prefill(
 ) -> list[int]:
     tokens = list(dict.fromkeys(int(token) for token in prompt_tokens))
     chunk_size = int(prefill_chunk_size)
-    if chunk_size > 0 and any(chunk_size < token for token in tokens):
+    if (
+        chunk_size > 0
+        and chunk_size not in tokens
+        and any(chunk_size < token for token in tokens)
+    ):
         tokens.append(chunk_size)
     return tokens
 
