@@ -24,6 +24,7 @@ PARAMETERS = {
     "rwkv-0.4b__qwen3.5-0.8b": (450_767_872, 752_393_024),
     "rwkv-1.5b__qwen3.5-2b": (1_527_404_544, 1_881_825_088),
     "rwkv-2.9b__qwen3.5-4b": (2_947_735_040, 4_205_751_296),
+    "rwkv-7.2b__qwen3.5-9b": (7_199_141_888, 8_953_916_416),
 }
 
 
@@ -55,17 +56,26 @@ def summarize(
     expected_device: str = EXPECTED_DEVICE,
     axis: str = "rtx4080_parameter_adjusted_pd",
     expected_qwen_backends: tuple[str, ...] = ("qwen_fla_gated_delta_rule",),
+    expected_pairs: tuple[str, ...] = PAIRS,
 ) -> dict[str, Any]:
     candidates = load_jsonl(candidate_path)
     references = load_jsonl(reference_path)
     errors: list[str] = []
     groups: list[dict[str, Any]] = []
-    if len(candidates) != 36:
-        errors.append(f"candidate matrix has {len(candidates)} rows, expected 36")
-    if len(references) != 36:
-        errors.append(f"reference matrix has {len(references)} rows, expected 36")
+    expected_rows = len(expected_pairs) * 12
+    if len(candidates) != expected_rows:
+        errors.append(
+            f"candidate matrix has {len(candidates)} rows, expected {expected_rows}"
+        )
+    if len(references) != expected_rows:
+        errors.append(
+            f"reference matrix has {len(references)} rows, expected {expected_rows}"
+        )
 
-    for pair in PAIRS:
+    for pair in expected_pairs:
+        if pair not in PARAMETERS:
+            errors.append(f"{pair}: active parameter contract is not registered")
+            continue
         for batch_size in (1, 8):
             expected = {
                 (batch_size, prompt, decode)
@@ -239,7 +249,7 @@ def summarize(
         "formula": "raw_speed_ratio * candidate_active_parameters / reference_active_parameters",
         "adjusted_prefill_cells_passed": prefill_cells_passed,
         "adjusted_decode_cells_passed": decode_cells_passed,
-        "cells_total": 36,
+        "cells_total": expected_rows,
         "groups": groups,
         "errors": errors,
     }
@@ -281,6 +291,12 @@ def main() -> int:
         dest="expected_qwen_backends",
         help="approved verified Qwen backend; repeat to allow more than one",
     )
+    parser.add_argument(
+        "--expected-model-pair",
+        action="append",
+        dest="expected_pairs",
+        help="required model pair; repeat to define the complete fail-closed matrix",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--markdown-output", type=Path)
     args = parser.parse_args()
@@ -293,6 +309,7 @@ def main() -> int:
         expected_qwen_backends=tuple(args.expected_qwen_backends)
         if args.expected_qwen_backends
         else ("qwen_fla_gated_delta_rule",),
+        expected_pairs=tuple(args.expected_pairs) if args.expected_pairs else PAIRS,
     )
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
