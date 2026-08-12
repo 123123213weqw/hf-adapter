@@ -48,6 +48,13 @@ def rounded(value: float) -> float:
     return round(float(value), 6)
 
 
+def pair_sort_key(pair: str) -> tuple[float, str]:
+    """Sort release pairs by RWKV active size, then by stable pair name."""
+
+    parameters = PARAMETERS.get(pair)
+    return (float(parameters[0]) if parameters is not None else float("inf"), pair)
+
+
 def summarize(
     candidate_path: Path,
     reference_path: Path,
@@ -72,7 +79,7 @@ def summarize(
             f"reference matrix has {len(references)} rows, expected {expected_rows}"
         )
 
-    for pair in expected_pairs:
+    for pair in sorted(expected_pairs, key=pair_sort_key):
         if pair not in PARAMETERS:
             errors.append(f"{pair}: active parameter contract is not registered")
             continue

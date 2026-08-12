@@ -165,3 +165,18 @@ def test_adjusted_pd_summary_supports_explicit_four_pair_matrix(
     assert len(report["groups"]) == 8
     assert report["adjusted_prefill_cells_passed"] == 48
     assert report["adjusted_decode_cells_passed"] == 48
+
+
+def test_adjusted_pd_summary_sorts_model_size_then_batch(tmp_path: Path) -> None:
+    pairs = tuple(reversed((*PAIRS, "rwkv-7.2b__qwen3.5-9b")))
+    candidate, reference = write_matrix(tmp_path, adjusted_ratio=1.1, pairs=pairs)
+
+    report = summarize(candidate, reference, expected_pairs=pairs)
+
+    assert [
+        (row["model_pair"], row["batch_size"]) for row in report["groups"]
+    ] == [
+        (pair, batch)
+        for pair in (*PAIRS, "rwkv-7.2b__qwen3.5-9b")
+        for batch in (1, 8)
+    ]
