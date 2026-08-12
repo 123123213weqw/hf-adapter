@@ -58,6 +58,7 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "qwen_compile_mode_effective": "reduce-overhead",
         "qwen_compile_fullgraph_effective": False,
         "qwen_compile_dynamic_effective": False,
+        "qwen_graph_scope": "single_token_hf_qwen_forward",
         "qwen_cuda_graph_requested": True,
         "qwen_cuda_graph_effective": True,
         "qwen_decode_cuda_graph_verified": True,
@@ -84,10 +85,10 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "decode_sec_samples": [0.2] * 7,
         "decode_sec_median": 0.2,
         "decode_sec_median_raw": 0.2,
-        "prefill_tokps_total": 1000.0,
-        "prefill_tokps_total_raw": 1000.0,
-        "decode_tokps_total": 500.0,
-        "decode_tokps_total_raw": 500.0,
+        "prefill_tokps_total": round(batch * prompt / 0.1, 3),
+        "prefill_tokps_total_raw": batch * prompt / 0.1,
+        "decode_tokps_total": round(batch * decode / 0.2, 3),
+        "decode_tokps_total_raw": batch * decode / 0.2,
         "logits_finite": True,
     }
 

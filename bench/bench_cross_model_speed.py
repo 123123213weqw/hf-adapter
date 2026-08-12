@@ -804,6 +804,15 @@ def _distinct_batch_probe_ids(ids: torch.Tensor, vocab_size: int) -> torch.Tenso
     return torch.remainder(ids + offsets, int(vocab_size))
 
 
+def _clear_qwen_compile_state(model) -> None:
+    for name in ("_compiled_call", "_last_compile_config"):
+        if hasattr(model, name):
+            delattr(model, name)
+    reset = getattr(torch.compiler, "reset", None)
+    if callable(reset):
+        reset()
+
+
 class QwenStaticCacheInductorCudaGraphDecode:
     """Compile one exact Qwen decode cell with HF StaticCache and CUDAGraph Trees."""
 
@@ -1004,12 +1013,7 @@ class QwenStaticCacheInductorCudaGraphDecode:
 
     def cleanup(self) -> None:
         self.compiled = None
-        for name in ("_compiled_call", "_last_compile_config"):
-            if hasattr(self.model, name):
-                delattr(self.model, name)
-        reset = getattr(torch.compiler, "reset", None)
-        if callable(reset):
-            reset()
+        _clear_qwen_compile_state(self.model)
 
 
 def _minimum_cosine(left: torch.Tensor, right: torch.Tensor) -> float:
@@ -1156,48 +1160,53 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
         args.model_kind == "qwen35"
         and qwen_optimization == "static_cache_inductor_cudagraph"
     ):
-        runner = QwenStaticCacheInductorCudaGraphDecode(args, model, ids)
-        parity = verify_qwen_cuda_graph_parity(args, model, ids, runner)
-        if not bool(parity["qwen_graph_parity_verified"]):
-            raise RuntimeError(
-                "Qwen CUDA Graph parity failed: "
-                + json.dumps(parity, ensure_ascii=False, sort_keys=True)
-            )
-        samples = [runner.timed() for _ in range(int(args.runs))]
-        details = {
-            "median_s": float(statistics.median(samples)),
-            "samples": samples,
-            "step_backend": "qwen_static_cache_inductor_cudagraph",
-            "effective_backend": None,
-            "cache_type": type(runner.cache).__name__,
-            "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
-            "qwen_cuda_graph_requested": True,
-            "qwen_cuda_graph_effective": True,
-            "qwen_decode_cuda_graph_verified": runner.cuda_graph_verified,
-            "qwen_graph_scope": runner.graph_scope,
-            "qwen_graph_capture_s": runner.capture_s,
-            "qwen_graph_setup_s": runner.setup_s,
-            "qwen_graph_max_cache_len": runner.max_cache_len,
-            "qwen_graph_break_count": runner.graph_break_count,
-            "qwen_cudagraph_skip_count": runner.cudagraph_skip_count,
-            "qwen_cudagraph_recorded_non_static_inputs": (
-                runner.cudagraph_recorded_non_static_inputs
-            ),
-            "qwen_cuda_graph_launch_count": runner.cuda_graph_launch_count,
-            "qwen_cache_pointer_stable": runner.cache_pointer_stable,
-            "qwen_cache_tensor_pointer_count": runner.cache_tensor_pointer_count,
-            "qwen_compile_backend_effective": runner.compile_backend,
-            "qwen_compile_mode_effective": runner.compile_mode,
-            "qwen_compile_fullgraph_effective": runner.compile_fullgraph,
-            "qwen_compile_dynamic_effective": runner.compile_dynamic,
-            **parity,
-        }
-        runner.cleanup()
-        del runner
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return details
+        runner = None
+        try:
+            runner = QwenStaticCacheInductorCudaGraphDecode(args, model, ids)
+            parity = verify_qwen_cuda_graph_parity(args, model, ids, runner)
+            if not bool(parity["qwen_graph_parity_verified"]):
+                raise RuntimeError(
+                    "Qwen CUDA Graph parity failed: "
+                    + json.dumps(parity, ensure_ascii=False, sort_keys=True)
+                )
+            samples = [runner.timed() for _ in range(int(args.runs))]
+            return {
+                "median_s": float(statistics.median(samples)),
+                "samples": samples,
+                "step_backend": "qwen_static_cache_inductor_cudagraph",
+                "effective_backend": None,
+                "cache_type": type(runner.cache).__name__,
+                "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
+                "qwen_cuda_graph_requested": True,
+                "qwen_cuda_graph_effective": True,
+                "qwen_decode_cuda_graph_verified": runner.cuda_graph_verified,
+                "qwen_graph_scope": runner.graph_scope,
+                "qwen_graph_capture_s": runner.capture_s,
+                "qwen_graph_setup_s": runner.setup_s,
+                "qwen_graph_max_cache_len": runner.max_cache_len,
+                "qwen_graph_break_count": runner.graph_break_count,
+                "qwen_cudagraph_skip_count": runner.cudagraph_skip_count,
+                "qwen_cudagraph_recorded_non_static_inputs": (
+                    runner.cudagraph_recorded_non_static_inputs
+                ),
+                "qwen_cuda_graph_launch_count": runner.cuda_graph_launch_count,
+                "qwen_cache_pointer_stable": runner.cache_pointer_stable,
+                "qwen_cache_tensor_pointer_count": runner.cache_tensor_pointer_count,
+                "qwen_compile_backend_effective": runner.compile_backend,
+                "qwen_compile_mode_effective": runner.compile_mode,
+                "qwen_compile_fullgraph_effective": runner.compile_fullgraph,
+                "qwen_compile_dynamic_effective": runner.compile_dynamic,
+                **parity,
+            }
+        finally:
+            if runner is not None:
+                runner.cleanup()
+            else:
+                _clear_qwen_compile_state(model)
+            runner = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     step, step_backend = step_function(model, args.model_kind, args.batch_size)
     samples: list[float] = []

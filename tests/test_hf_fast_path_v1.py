@@ -194,6 +194,17 @@ def test_environment_capture_accepts_an_explicit_protocol(monkeypatch) -> None:
     assert manifest["protocol"] == "qwen35_best_optimized_hf_v1"
 
 
+def test_environment_capture_accepts_explicit_repository_commit(monkeypatch) -> None:
+    monkeypatch.setenv("REPOSITORY_COMMIT", "explicit-sha")
+    monkeypatch.setattr(
+        "bench.capture_hf_fast_path_v1_environment.subprocess.check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("git called")),
+    )
+    from bench.capture_hf_fast_path_v1_environment import git_commit
+
+    assert git_commit(ROOT) == "explicit-sha"
+
+
 def test_single_card_script_is_official_and_fail_closed() -> None:
     text = (ROOT / "bench" / "run_hf_fast_path_v1.sh").read_text(encoding="utf-8")
     assert "--qwen-conv-backend causal_conv1d" in text

@@ -58,6 +58,9 @@ def pip_freeze() -> str:
 
 
 def git_commit(root: Path) -> str:
+    explicit = os.environ.get("REPOSITORY_COMMIT")
+    if explicit:
+        return explicit
     return subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
     ).strip()

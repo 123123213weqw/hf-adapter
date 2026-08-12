@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from collections import Counter
 from itertools import product
@@ -126,6 +127,7 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("qwen_compile_mode_effective", "reduce-overhead"),
         ("qwen_compile_fullgraph_effective", False),
         ("qwen_compile_dynamic_effective", False),
+        ("qwen_graph_scope", "single_token_hf_qwen_forward"),
         ("qwen_cuda_graph_requested", True),
         ("qwen_cuda_graph_effective", True),
         ("qwen_decode_cuda_graph_verified", True),
@@ -179,6 +181,26 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         _require_positive(row, field, errors)
     _validate_samples(row, "prefill_sec_samples", "prefill_sec_median", errors)
     _validate_samples(row, "decode_sec_samples", "decode_sec_median", errors)
+    for field in RUNTIME_FIELDS:
+        if not row.get(field):
+            errors.append(
+                f"{row.get('_source', '<row>')}: {field} must be non-empty"
+            )
+    expected_prefill = batch * prompt / float(row.get("prefill_sec_median_raw", math.nan))
+    expected_decode = batch * decode / float(row.get("decode_sec_median_raw", math.nan))
+    for field, actual, expected in (
+        ("prefill_tokps_total_raw", row.get("prefill_tokps_total_raw"), expected_prefill),
+        ("decode_tokps_total_raw", row.get("decode_tokps_total_raw"), expected_decode),
+    ):
+        if (
+            not isinstance(actual, (int, float))
+            or not math.isfinite(actual)
+            or not math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
+        ):
+            errors.append(
+                f"{row.get('_source', '<row>')}: {field}={actual!r}, "
+                f"expected tokens/raw_median={expected!r}"
+            )
 
 
 def validate_matrix(
@@ -235,7 +257,10 @@ def validate_matrix(
         "qwen_contract": QWEN_CONTRACT,
         "reference_lane_eligible": not errors,
         "unified_main_table_eligible": False,
-        "unified_main_table_reason": "RWKV candidate rows were not rerun under this runtime",
+        "unified_main_table_reason": (
+            "RWKV candidate rows were not rerun under this runtime, and the Qwen "
+            "numbers are an independent best-Prefill/best-Decode axis envelope"
+        ),
         "errors": errors,
     }
 
