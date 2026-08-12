@@ -1156,7 +1156,7 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         "qwen_graph_break_count": 0,
         "qwen_cudagraph_skip_count": 0,
         "qwen_compile_backend_effective": "inductor",
-        "qwen_compile_mode_effective": "reduce-overhead",
+        "qwen_compile_mode_effective": "max-autotune",
         "qwen_graph_logits_min_cosine": 0.99999,
         "step_backend": "qwen_static_cache_inductor_cudagraph",
         "prefill_backend_effective": "module_call_dynamic_cache",

@@ -55,7 +55,7 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "prefill_cache_type": "DynamicCache",
         "cache_type": "StaticCache",
         "qwen_compile_backend_effective": "inductor",
-        "qwen_compile_mode_effective": "reduce-overhead",
+        "qwen_compile_mode_effective": "max-autotune",
         "qwen_compile_fullgraph_effective": False,
         "qwen_compile_dynamic_effective": False,
         "qwen_graph_scope": "single_token_hf_qwen_forward",

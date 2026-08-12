@@ -818,7 +818,7 @@ class QwenStaticCacheInductorCudaGraphDecode:
 
     graph_scope = "single_token_hf_qwen_forward"
     compile_backend = "inductor"
-    compile_mode = "reduce-overhead"
+    compile_mode = "max-autotune"
     compile_fullgraph = False
     compile_dynamic = False
     capture_warmup_steps = 3
@@ -1712,7 +1712,7 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "qwen_graph_break_count": 0,
                 "qwen_cudagraph_skip_count": 0,
                 "qwen_compile_backend_effective": "inductor",
-                "qwen_compile_mode_effective": "reduce-overhead",
+                "qwen_compile_mode_effective": "max-autotune",
                 "step_backend": "qwen_static_cache_inductor_cudagraph",
                 "prefill_backend_effective": "module_call_dynamic_cache",
                 "prefill_cache_type": "DynamicCache",
@@ -2064,7 +2064,7 @@ def parse_args() -> argparse.Namespace:
         default="module_call_dynamic",
         help=(
             "Decode invocation layer. The optimized Qwen lane uses HF StaticCache, "
-            "Inductor reduce-overhead, and verified CUDA Graph replay."
+            "Inductor max-autotune, and verified CUDA Graph replay."
         ),
     )
     ap.add_argument(
