@@ -186,6 +186,7 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "axis": "qwen35_cross_model_speed",
         "benchmark_matrix": args.benchmark_matrix,
+        "benchmark_repository_commit": os.environ.get("REPOSITORY_COMMIT"),
         "optimization_lane": str(getattr(args, "optimization_lane", "") or ""),
         "model_pair": args.model_pair,
         "model_role": args.model_role,
@@ -197,6 +198,9 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
         "qwen_fast_path_required": bool(getattr(args, "require_qwen_fast_path", False)),
         "qwen_decode_optimization_requested": str(
             getattr(args, "qwen_decode_optimization", "module_call_dynamic")
+        ),
+        "qwen_compile_mode_requested": str(
+            getattr(args, "qwen_compile_mode", "max-autotune")
         ),
         "qwen_graph_logits_probe_tokens_requested": int(
             getattr(args, "qwen_graph_probe_tokens", 16)
@@ -1824,7 +1828,8 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
             "qwen_dynamic_static_logits_min_cosine",
             "qwen_static_compiled_logits_min_cosine",
         ):
-            if float(row.get(field, float("-inf"))) < 0.9999:
+            value = float(row.get(field, float("-inf")))
+            if not math.isfinite(value) or value < 0.9999:
                 raise RuntimeError(
                     "Qwen3.5 result row failed the requested CUDA Graph contract: "
                     f"{field}={row.get(field)!r} (expected >=0.9999)"
@@ -1840,7 +1845,6 @@ def benchmark_loaded(
     qwen_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     qwen_contract = qwen_contract or {}
-    benchmark_repository_commit = os.environ.get("REPOSITORY_COMMIT")
     input_device = str(next(model.parameters()).device)
     ids = build_exact_prompt(tokenizer, args.prompt_tokens, args.batch_size, input_device)
 
@@ -1915,7 +1919,6 @@ def benchmark_loaded(
     decode_tokps = (args.batch_size * args.decode_tokens) / decode_s
     row = {
         **base_row(args),
-        "benchmark_repository_commit": benchmark_repository_commit,
         **model_metadata(args, model),
         **environment_metadata(args, model),
         **effective_quantization_metadata(model, args),

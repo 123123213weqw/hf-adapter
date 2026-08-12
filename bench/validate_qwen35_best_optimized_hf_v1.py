@@ -145,11 +145,27 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("logits_finite", True),
     ):
         _require(row, field, expected, errors)
+    repository_commit = row.get("benchmark_repository_commit")
+    if not isinstance(repository_commit, str) or not repository_commit.strip():
+        errors.append(
+            f"{row.get('_source', '<row>')}: benchmark_repository_commit must be non-empty"
+        )
+    requested_compile_mode = row.get("qwen_compile_mode_requested")
     compile_mode = row.get("qwen_compile_mode_effective")
+    if requested_compile_mode not in QWEN_COMPILE_MODES:
+        errors.append(
+            f"{row.get('_source', '<row>')}: qwen_compile_mode_requested="
+            f"{requested_compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+        )
     if compile_mode not in QWEN_COMPILE_MODES:
         errors.append(
             f"{row.get('_source', '<row>')}: qwen_compile_mode_effective="
             f"{compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+        )
+    if requested_compile_mode != compile_mode:
+        errors.append(
+            f"{row.get('_source', '<row>')}: requested/effective compile mode mismatch: "
+            f"{requested_compile_mode!r} != {compile_mode!r}"
         )
     if expected_device:
         _require(row, "device", expected_device, errors)
@@ -175,7 +191,11 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         "qwen_static_compiled_logits_min_cosine",
     ):
         minimum_cosine = row.get(field)
-        if not isinstance(minimum_cosine, (int, float)) or minimum_cosine < 0.9999:
+        if (
+            not isinstance(minimum_cosine, (int, float))
+            or not math.isfinite(minimum_cosine)
+            or minimum_cosine < 0.9999
+        ):
             errors.append(
                 f"{row.get('_source', '<row>')}: {field}="
                 f"{minimum_cosine!r}, expected >=0.9999"

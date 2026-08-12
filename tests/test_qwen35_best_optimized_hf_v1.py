@@ -50,6 +50,7 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "qwen_conv_backend_effective": "causal_conv1d",
         "qwen_force_torch": False,
         "qwen_decode_optimization_requested": "static_cache_inductor_cudagraph",
+        "qwen_compile_mode_requested": "max-autotune",
         "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
         "step_backend": "qwen_static_cache_inductor_cudagraph",
         "prefill_backend_effective": "module_call_dynamic_cache",
@@ -119,6 +120,7 @@ def test_reduce_overhead_rows_are_valid_when_all_graph_gates_pass() -> None:
     rows = complete_rows()
     for item in rows:
         if item["model_size_label"] == "0.8b":
+            item["qwen_compile_mode_requested"] = "reduce-overhead"
             item["qwen_compile_mode_effective"] = "reduce-overhead"
     summary = validate_matrix(rows, expected_device="NVIDIA GeForce RTX 5090")
     assert summary["status"] == "pass"
@@ -138,6 +140,23 @@ def test_rows_must_record_one_benchmark_repository_commit() -> None:
     summary = validate_matrix(rows)
     assert summary["status"] == "fail"
     assert any("repository commit" in error for error in summary["errors"])
+
+    rows = complete_rows()
+    for item in rows[:-1]:
+        item.pop("benchmark_repository_commit")
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("must be non-empty" in error for error in summary["errors"])
+
+
+def test_non_finite_cosine_and_requested_mode_mismatch_fail() -> None:
+    rows = complete_rows()
+    rows[0]["qwen_static_compiled_logits_min_cosine"] = float("nan")
+    rows[1]["qwen_compile_mode_requested"] = "reduce-overhead"
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("expected >=0.9999" in error for error in summary["errors"])
+    assert any("requested/effective" in error for error in summary["errors"])
 
 
 def test_graph_fallback_or_missing_cell_fails() -> None:

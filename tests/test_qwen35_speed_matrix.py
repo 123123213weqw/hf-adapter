@@ -1188,6 +1188,11 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         validate_qwen_result_contract(
             args, {**passing, "qwen_static_compiled_logits_min_cosine": 0.9998}
         )
+    with pytest.raises(RuntimeError, match="qwen_static_compiled_logits_min_cosine"):
+        validate_qwen_result_contract(
+            args,
+            {**passing, "qwen_static_compiled_logits_min_cosine": float("nan")},
+        )
 
 
 class FakeTokenizer:
