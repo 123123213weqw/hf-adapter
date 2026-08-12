@@ -78,7 +78,8 @@ def test_cross_card_table_is_model_gpu_batch_sorted_and_formatted() -> None:
 
 def test_4090_artifact_table_is_model_batch_sorted_and_formatted() -> None:
     path = ROOT / "bench/4090_hf_best_optimized_v1_20260812/README.md"
-    lines = path.read_text(encoding="utf-8").splitlines()
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
     header = lines.index(
         "| RWKV / Qwen | Batch | RWKV Prefill / Decode | Qwen Prefill / Decode | Raw Prefill / Decode | Adjusted Prefill / Decode | Adjusted minima P / D |"
     )
@@ -91,3 +92,21 @@ def test_4090_artifact_table_is_model_batch_sorted_and_formatted() -> None:
     for row in rows:
         assert_throughput_format(row[2])
         assert_throughput_format(row[3])
+
+    for artifact in ("candidate.jsonl", "qwen_reference.jsonl", "main_table.jsonl"):
+        assert f"]({artifact})" in text
+    assert "`prefill_tokps_total`" in text
+    assert "`decode_tokps_total`" in text
+
+
+def test_comparison_docs_link_full_precision_4090_pd_evidence() -> None:
+    artifact_root = "../bench/4090_hf_best_optimized_v1_20260812/"
+    for relative in (
+        "docs/QWEN35_SPEED_COMPARISON.md",
+        "docs/QWEN35_SPEED_COMPARISON_ZH.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for artifact in ("candidate.jsonl", "qwen_reference.jsonl", "main_table.jsonl"):
+            assert f"]({artifact_root}{artifact})" in text
+        assert "`prefill_tokps_total`" in text
+        assert "`decode_tokps_total`" in text

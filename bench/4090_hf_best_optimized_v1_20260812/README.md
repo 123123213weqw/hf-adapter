@@ -50,6 +50,11 @@ The weakest adjusted Prefill cell is 0.4B/0.8B, B8, P512, D128 at
 Throughput columns are medians in tok/s: values at or above 100 use zero
 decimal places, while values below 100 use one decimal place. B8 Decode is
 aggregate throughput across all eight sequences, not per-sequence throughput.
+This rounding is display-only. Full-precision original Prefill and Decode
+measurements remain in [candidate.jsonl](candidate.jsonl),
+[qwen_reference.jsonl](qwen_reference.jsonl), and the complete joined
+[main_table.jsonl](main_table.jsonl); read `prefill_tokps_total` and
+`decode_tokps_total`. No raw measurement was rounded or overwritten.
 
 | RWKV / Qwen | Batch | RWKV Prefill / Decode | Qwen Prefill / Decode | Raw Prefill / Decode | Adjusted Prefill / Decode | Adjusted minima P / D |
 |---|---:|---:|---:|---:|---:|---:|
@@ -92,9 +97,9 @@ skipped.
 
 ## Artifact map
 
-- `candidate.jsonl`: 48 RWKV rows.
-- `qwen_reference.jsonl`: 48 official Qwen rows.
-- `main_table.jsonl`: all 96 validated rows.
+- [candidate.jsonl](candidate.jsonl): 48 full-precision RWKV rows.
+- [qwen_reference.jsonl](qwen_reference.jsonl): 48 full-precision official Qwen rows.
+- [main_table.jsonl](main_table.jsonl): all 96 validated full-precision rows.
 - `validation.json`: fail-closed matrix validator output.
 - `qwen_official_fast_path_status.json`: official FLA/causal-conv contract.
 - `summary.json` and `summary.md`: cell-level adjusted-P/D acceptance.

@@ -151,6 +151,13 @@ tok/s`与`Qwen P / D tok/s`是分别对声明范围内各格吞吐取中位数�
 中位数直接相除。RTX 4090 行已用最新统一正式产物刷新；本节其他 GPU 行仍保留
 各自历史协议。
 
+表格中的舍入只用于显示，原始 Prefill / Decode 测量值没有被舍入或覆盖；每行
+“证据”链接都指向对应的全精度产物。最新 RTX 4090 矩阵的 RWKV 原始行见
+[candidate.jsonl](../bench/4090_hf_best_optimized_v1_20260812/candidate.jsonl)，Qwen 原始行见
+[qwen_reference.jsonl](../bench/4090_hf_best_optimized_v1_20260812/qwen_reference.jsonl)，完整 96 行合并表见
+[main_table.jsonl](../bench/4090_hf_best_optimized_v1_20260812/main_table.jsonl)。全精度原始吞吐字段为
+`prefill_tokps_total` 和 `decode_tokps_total`。
+
 RTX 4080 现已通过更严格的逐格门槛：**参数校正 Prefill 36/36、Decode
 36/36 全部超过**，全矩阵最小值为 `1.068520x / 1.140700x`。
 

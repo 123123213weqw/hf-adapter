@@ -171,6 +171,15 @@ equal a division of the displayed throughput medians. The RTX 4090 rows below
 have been refreshed from the promoted unified artifact; other rows retain their
 historical contracts.
 
+These rounded table cells are display values only; no original Prefill or
+Decode measurement is rounded or overwritten. Every Evidence link leads to
+the corresponding full-precision artifact. For the promoted RTX 4090 matrix,
+the original RWKV rows are in [candidate.jsonl](../bench/4090_hf_best_optimized_v1_20260812/candidate.jsonl),
+the original Qwen rows are in [qwen_reference.jsonl](../bench/4090_hf_best_optimized_v1_20260812/qwen_reference.jsonl),
+and the complete 96-row join is in [main_table.jsonl](../bench/4090_hf_best_optimized_v1_20260812/main_table.jsonl).
+Use `prefill_tokps_total` and `decode_tokps_total` for the full-precision
+original throughput.
+
 For RTX 4080, the stricter cell-level gate now passes **36/36 adjusted
 Prefill cells and 36/36 adjusted Decode cells**; the full-matrix minima are
 `1.068520x / 1.140700x`.
