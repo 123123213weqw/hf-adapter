@@ -59,10 +59,10 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "cells": len(group),
             "decode_route": str(group[0]["qwen_decode_optimization_effective"]),
             "prefill_tokps_median": statistics.median(
-                float(row["prefill_tokps_total"]) for row in group
+                float(row["prefill_tokps_total_raw"]) for row in group
             ),
             "decode_tokps_median": statistics.median(
-                float(row["decode_tokps_total"]) for row in group
+                float(row["decode_tokps_total_raw"]) for row in group
             ),
         }
         for (model, device, batch), group in groups.items()
@@ -92,6 +92,22 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "schema_version": 2,
         "benchmark_matrix": "qwen35_best_optimized_hf_v1",
+        "reference_lane_eligible": True,
+        "unified_main_table_eligible": False,
+        "unified_main_table_reason": (
+            "RWKV candidate rows were not rerun under this runtime, and the "
+            "Qwen numbers are an independent best-Prefill/best-Decode axis envelope"
+        ),
+        "axis_composition": "independent_best_prefill_and_decode",
+        "interpretation": {
+            "scope": "qwen_reference_only",
+            "prefill": "official FLA plus causal_conv1d eager DynamicCache",
+            "decode": "fixed per-model StaticCache CUDA Graph route",
+            "continuous_end_to_end_path": False,
+            "raw_cudagraph_origin": (
+                "repository benchmark optimization, not an official Qwen Graph path"
+            ),
+        },
         "sort_order": ["model_size", "gpu", "batch", "prompt", "decode"],
         "display_rounding": {">=100": 0, "<100": 1},
         "correctness_contract": {
@@ -160,6 +176,17 @@ def render_markdown(summary: dict[str, Any]) -> str:
     lines = [
         "# RTX 5090 Qwen3.5 best-optimized HF raw results",
         "",
+        "Status: **PASS, reference-only**. This Qwen-only artifact is not "
+        "eligible for the unified RWKV/Qwen main table because no same-runtime "
+        "RWKV candidate was measured.",
+        "",
+        "Prefill and Decode form an `independent_best_prefill_and_decode` "
+        "performance envelope. They are not one continuous end-to-end request, "
+        "TTFT result, or DynamicCache-to-StaticCache handoff. Prefill uses the "
+        "official FLA plus `causal_conv1d` eager DynamicCache path. Raw CUDA "
+        "Graph, where selected, is a repository benchmark optimization around "
+        "the official Qwen operators, not an official Qwen Graph path.",
+        "",
         "Rows are sorted by model size, GPU, B1/B8, prompt and decode. "
         "Display values use 0 decimals at >=100 tok/s and 1 decimal below 100; "
         "JSONL and JSON retain the original numeric values and all seven samples.",
@@ -219,8 +246,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "| {model_size_label} | {device} | B{batch_size} | {prompt_tokens} | "
             "{decode_tokens} | {qwen_decode_optimization_effective} | {prefill} | {decode} |".format(
                 **row,
-                prefill=display_rate(float(row["prefill_tokps_total"])),
-                decode=display_rate(float(row["decode_tokps_total"])),
+                prefill=display_rate(float(row["prefill_tokps_total_raw"])),
+                decode=display_rate(float(row["decode_tokps_total_raw"])),
             )
         )
     lines.append("")

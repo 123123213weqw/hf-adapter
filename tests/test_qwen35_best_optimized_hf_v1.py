@@ -282,16 +282,40 @@ def test_summary_sort_and_display_rounding_do_not_change_raw_values() -> None:
     rows = complete_rows()
     rows.reverse()
     rows[0]["decode_tokps_total"] = 99.94
+    rows[0]["decode_tokps_total_raw"] = 100.04
+    target_model = rows[0]["model_size_label"]
+    target_batch = rows[0]["batch_size"]
+    target_group = [
+        item
+        for item in rows
+        if item["model_size_label"] == target_model
+        and item["batch_size"] == target_batch
+    ]
+    for index, item in enumerate(target_group):
+        item["prefill_tokps_total"] = float(index + 1)
+        item["prefill_tokps_total_raw"] = float(1000 + index)
     summary = build_summary(rows)
     ordered = ordered_rows(rows)
     assert ordered[0]["model_size_label"] == "0.8b"
     assert ordered[0]["batch_size"] == 1
     assert summary["cells"][-1]["decode_tokps_total"] == 99.94
+    assert summary["cells"][-1]["decode_tokps_total_raw"] == 100.04
+    target_median = next(
+        item
+        for item in summary["model_batch_medians"]
+        if item["model_size_label"] == target_model
+        and item["batch_size"] == target_batch
+    )
+    assert target_median["prefill_tokps_median"] == 1002.5
     assert display_rate(99.94) == "99.9"
     assert display_rate(100.0) == "100"
     assert summary["correctness_contract"]["same_cache"]["cosine_threshold"] == 0.9999
     assert summary["correctness_contract"]["cross_cache"]["cosine_threshold"] is None
     assert summary["correctness_contract"]["cross_cache"]["cosine_interpretation"] == "informational_only"
+    assert summary["reference_lane_eligible"] is True
+    assert summary["unified_main_table_eligible"] is False
+    assert summary["axis_composition"] == "independent_best_prefill_and_decode"
+    assert summary["interpretation"]["continuous_end_to_end_path"] is False
     assert len(summary["model_correctness"]) == 4
     assert summary["model_correctness"][0]["same_cache_logits_min_cosine"] == 0.99999
     markdown = render_markdown(summary)
@@ -299,6 +323,9 @@ def test_summary_sort_and_display_rounding_do_not_change_raw_values() -> None:
     assert "minimum cosine >= 0.9999" in markdown
     assert "Cross-cache hard gates" in markdown
     assert "cosine is informational only" in markdown
+    assert "PASS, reference-only" in markdown
+    assert "not eligible for the unified RWKV/Qwen main table" in markdown
+    assert "not an official Qwen Graph path" in markdown
 
     first_pair = rows[0]["model_pair"]
     gpu_rows = [
