@@ -140,6 +140,17 @@ def model_shape_spec(
     )
 
 
+def shape_tokens_for_prefill(
+    prompt_tokens: list[int],
+    prefill_chunk_size: int,
+) -> list[int]:
+    tokens = list(dict.fromkeys(int(token) for token in prompt_tokens))
+    chunk_size = int(prefill_chunk_size)
+    if chunk_size > 0 and any(chunk_size < token for token in tokens):
+        tokens.append(chunk_size)
+    return tokens
+
+
 def _cosine_min(left: torch.Tensor, right: torch.Tensor) -> float:
     return float(F.cosine_similarity(left.float(), right.float(), dim=-1).min())
 
@@ -292,7 +303,10 @@ def main() -> int:
             hidden_size,
             num_layers,
             args.batch_sizes,
-            args.prompt_tokens,
+            shape_tokens_for_prefill(
+                args.prompt_tokens,
+                args.prefill_chunk_size,
+            ),
         )
         os.environ["RWKV7_FAST_PREFILL"] = "1"
         os.environ["RWKV7_NATIVE_PREFILL_GRAPH"] = (

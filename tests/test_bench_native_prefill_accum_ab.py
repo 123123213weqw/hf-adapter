@@ -11,6 +11,7 @@ from bench.bench_native_prefill_accum_ab import (
     mode_flags,
     model_shape_spec,
     route_effective_matches,
+    shape_tokens_for_prefill,
     sweep_orders,
 )
 
@@ -54,6 +55,12 @@ def test_model_shape_spec_is_deterministic() -> None:
         "1024x24x1x128 1024x24x1x512 "
         "1024x24x8x128 1024x24x8x512"
     )
+
+
+def test_chunk_size_is_added_to_exact_shape_allowlist() -> None:
+    assert shape_tokens_for_prefill([2048], 512) == [2048, 512]
+    assert shape_tokens_for_prefill([128, 512, 2048], 512) == [128, 512, 2048]
+    assert shape_tokens_for_prefill([2048], 0) == [2048]
 
 
 def test_direct_script_entrypoint_resolves_bench_package() -> None:
