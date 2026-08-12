@@ -36,6 +36,29 @@ Status vocabulary:
 - **HISTORICAL:** passed an older local gate but is not eligible for the current
   unified comparison.
 
+## Unified Qwen comparator status
+
+RTX 4090 completed the superseding `hf_fast_path_v1` matrix on 2026-08-12.
+The artifact has 48/48 official FLA + Dao-AILab causal-conv1d Qwen rows and
+48/48 RWKV `native_jit` rows with CUDA Graph disabled. All 96 rows share one
+locked runtime signature; the fail-closed validator reports no errors or
+fallback.
+
+| GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
+|---|---|---:|---:|---:|---:|---|
+| RTX 4090 | `hf_fast_path_v1` | 96/96 | 26/48 | 48/48 | 48/48 | **PROTOCOL PASS / Prefill performance partial** |
+| RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
+| RTX 5090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
+
+Across the 4090 matrix, raw Decode minimum/median is
+`1.619831x/1.660445x` Qwen and parameter-adjusted Decode is
+`1.995698x/2.266103x`. Parameter-adjusted Prefill has minimum/median
+`0.776985x/1.077582x`, so it does not pass the all-cells-above-Qwen target.
+Corrected Qwen Decode medians for 0.8B/2B/4B/9B are respectively
+`35.512/35.115/25.443/25.499 tok/s` at B1 and
+`268.928/268.261/195.923/197.472 tok/s` at B8. Evidence:
+[`bench/4090_hf_fast_path_v1_20260812/`](bench/4090_hf_fast_path_v1_20260812/README.md).
+
 ## Production-close and historical overview
 
 Rows involving Qwen3.5 in this table are **HISTORICAL** under the superseding
@@ -555,6 +578,17 @@ Evidence and reproduction:
 [`bench/4080_full_model_ladder_20260719/README.md`](bench/4080_full_model_ladder_20260719/README.md).
 
 ## RTX 4090 promoted rows
+
+The current unified comparison is the 2026-08-12 `hf_fast_path_v1` artifact:
+96/96 rows pass the protocol validator, Qwen uses its official FLA plus
+causal-conv1d path without fallback, and RWKV uses `native_jit` without CUDA
+Graph. Decode passes every raw and adjusted comparison cell. Adjusted Prefill
+passes 26/48 cells, so the fair lane is performance-partial rather than an
+all-cell Prefill win. See
+[`bench/4090_hf_fast_path_v1_20260812/README.md`](bench/4090_hf_fast_path_v1_20260812/README.md).
+
+The older rows below retain their original exact-card gates but are historical
+under the unified Qwen comparator contract.
 
 The 2026-08-12 exact-card transfer from the RTX 4080 work promotes two narrow
 routes for latest g1d/g1i 0.4B/1.5B/2.9B checkpoints. Block-scoped FP16 GEMM

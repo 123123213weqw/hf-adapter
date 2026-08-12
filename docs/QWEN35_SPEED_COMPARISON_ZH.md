@@ -9,9 +9,9 @@ causal-convolution 实现、运行时版本和 RWKV CUDA Graph 设置；即使�
 FLA，实际也可能绑定仓库 Triton convolution 或静默回退到慢速 PyTorch 路径。
 这些证据只保留为历史复现和回归资料。
 
-新的主表现在有意保持为空，直到 RTX 3090、RTX 4090 和 RTX 5090 分别完成
-严格一致的 `hf_fast_path_v1`。每张卡必须有 48 行 RWKV 和 48 行 Qwen；
-不完整卡、后端回退和旧结果都不能混入主表。
+新的主表按卡逐张写入。RTX 4090 已于 2026-08-12 完成严格一致的
+`hf_fast_path_v1`，96/96 行通过且没有 fallback；RTX 3090 和 RTX 5090
+仍待重测。不完整卡、后端回退和旧结果都不能混入主表。
 
 ## 固定协议（`hf_fast_path_v1`）
 
@@ -30,6 +30,29 @@ FLA，实际也可能绑定仓库 Triton convolution 或静默回退到慢速 Py
 
 每个模型侧 `4 × 2 × 3 × 2 = 48` 格；每张卡 96 行，三张卡共 288 行。
 如果只重测 Qwen baseline，则三张卡共 144 行。
+
+### 统一主表状态
+
+| GPU | 行数 | Qwen 官方快速路径 | RWKV 公平线 | 参数校正 Prefill 超过 Qwen | 原始 / 参数校正 Decode 超过 Qwen | 证据 |
+|---|---:|---|---|---:|---:|---|
+| RTX 4090 | 96/96 | 48/48 通过，无 fallback | 48/48 `native_jit`，关闭 Graph | 26/48 | 48/48 / 48/48 | [不可变证据](../bench/4090_hf_fast_path_v1_20260812/README.md) |
+| RTX 3090 | 待测 | 待测 | 待测 | — | — | — |
+| RTX 5090 | 待测 | 待测 | 待测 | — | — | — |
+
+RTX 4090 的协议验收已经通过，但性能结论必须分开：Decode 每格都超过 Qwen
+（原始最小值/中位数 `1.619831x/1.660445x`，参数校正后
+`1.995698x/2.266103x`）；参数校正 Prefill 只有 26/48 格超过 Qwen
+（最小值/中位数 `0.776985x/1.077582x`）。因此，公平线 Prefill **没有通过
+“每格都超过 Qwen”** 的性能门槛；最佳优化 RWKV 结果继续单列附表。
+
+RTX 4090 上校正后的 Qwen Decode 中位数为：
+
+| Qwen3.5 | B1 | B8 |
+|---|---:|---:|
+| 0.8B | 35.512 tok/s | 268.928 tok/s |
+| 2B | 35.115 tok/s | 268.261 tok/s |
+| 4B | 25.443 tok/s | 195.923 tok/s |
+| 9B | 25.499 tok/s | 197.472 tok/s |
 
 环境也是验收的一部分：三张卡必须使用相同 Python、PyTorch+CUDA build、
 Transformers、FLA、`causal-conv1d` 和仓库提交。产物保存运行时锁、

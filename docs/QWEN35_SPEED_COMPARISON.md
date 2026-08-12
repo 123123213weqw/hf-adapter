@@ -10,10 +10,10 @@ and RWKV CUDA-Graph settings. In particular, a row that requested FLA could
 still use a non-official convolution route or a slow Transformers fallback.
 Those artifacts remain reproducibility history only.
 
-The replacement main table is intentionally empty until each card completes
-the exact `hf_fast_path_v1` contract below. RTX 3090, RTX 4090 and RTX 5090
-must each produce 48 RWKV rows plus 48 Qwen rows. No partial card, backend
-fallback, or legacy result is merged into this table.
+The replacement main table is populated card by card. RTX 4090 completed the
+exact `hf_fast_path_v1` contract on 2026-08-12 with 96/96 rows and no fallback;
+RTX 3090 and RTX 5090 remain pending. No partial card, backend fallback, or
+legacy result is merged into this table.
 
 ## Fixed protocol (`hf_fast_path_v1`)
 
@@ -32,6 +32,30 @@ fallback, or legacy result is merged into this table.
 
 One model side has `4 × 2 × 3 × 2 = 48` cells. One card has 96 rows and all
 three cards have 288 rows. A Qwen-only baseline refresh has 144 rows.
+
+### Unified main-table status
+
+| GPU | Rows | Qwen official fast path | RWKV fair lane | Adjusted Prefill > Qwen | Raw / adjusted Decode > Qwen | Evidence |
+|---|---:|---|---|---:|---:|---|
+| RTX 4090 | 96/96 | 48/48 pass, no fallback | 48/48 `native_jit`, Graph off | 26/48 | 48/48 / 48/48 | [immutable artifact](../bench/4090_hf_fast_path_v1_20260812/README.md) |
+| RTX 3090 | pending | pending | pending | — | — | — |
+| RTX 5090 | pending | pending | pending | — | — | — |
+
+RTX 4090 protocol validation passes, but the performance conclusion is split:
+Decode clears Qwen in every cell (raw minimum/median `1.619831x/1.660445x`;
+parameter-adjusted `1.995698x/2.266103x`), while adjusted Prefill clears only
+26/48 cells (minimum/median `0.776985x/1.077582x`). The fair-lane Prefill result
+therefore does **not** pass an all-cells-above-Qwen threshold. Best-optimized
+RWKV rows stay in a separate appendix.
+
+The corrected Qwen Decode medians on RTX 4090 are:
+
+| Qwen3.5 | B1 | B8 |
+|---|---:|---:|
+| 0.8B | 35.512 tok/s | 268.928 tok/s |
+| 2B | 35.115 tok/s | 268.261 tok/s |
+| 4B | 25.443 tok/s | 195.923 tok/s |
+| 9B | 25.499 tok/s | 197.472 tok/s |
 
 The environment is also part of the result: all cards must use the same
 Python, PyTorch+CUDA build, Transformers revision, FLA revision,
