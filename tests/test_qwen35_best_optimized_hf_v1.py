@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from itertools import product
 
+import pytest
+
 from bench.validate_qwen35_best_optimized_hf_v1 import PAIRS, validate_matrix
 from bench.summarize_qwen35_best_optimized_hf_v1 import (
     build_summary,
@@ -76,6 +78,9 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "qwen_graph_greedy_match": True,
         "qwen_static_cache_eager_greedy_match": True,
         "qwen_graph_logits_greedy_match": True,
+        "qwen_graph_logits_trace_finite": True,
+        "qwen_dynamic_static_logits_finite": True,
+        "qwen_static_compiled_logits_finite": True,
         "qwen_graph_logits_min_cosine": 0.99999,
         "qwen_dynamic_static_logits_min_cosine": 0.99999,
         "qwen_static_compiled_logits_min_cosine": 0.99999,
@@ -166,6 +171,23 @@ def test_graph_fallback_or_missing_cell_fails() -> None:
     assert summary["status"] == "fail"
     assert any("qwen_decode_cuda_graph_verified=False" in error for error in summary["errors"])
     assert any("missing cells" in error for error in summary["errors"])
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "qwen_graph_logits_trace_finite",
+        "qwen_dynamic_static_logits_finite",
+        "qwen_static_compiled_logits_finite",
+    ),
+)
+def test_trace_finite_gates_require_real_booleans(field: str) -> None:
+    for invalid in (False, 1, None):
+        rows = complete_rows()
+        rows[0][field] = invalid
+        summary = validate_matrix(rows)
+        assert summary["status"] == "fail"
+        assert any(field in error for error in summary["errors"])
 
 
 def test_summary_sort_and_display_rounding_do_not_change_raw_values() -> None:

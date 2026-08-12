@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from bench.bench_cross_model_speed import (  # noqa: E402
+    _logits_trace_metrics,
+    QwenCudaGraphParityError,
     build_exact_prompt,
     effective_quantization_metadata,
     enforce_qwen_backend,
@@ -56,6 +58,35 @@ from bench.run_qwen35_speed_matrix import (  # noqa: E402
 
 def write_rows(path: Path, rows: list[dict]) -> None:
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def test_logits_trace_metrics_rejects_non_finite_later_step() -> None:
+    left = [torch.tensor([[1.0, 2.0]]), torch.tensor([[float("nan"), 3.0]])]
+    right = [torch.tensor([[1.0, 2.0]]), torch.tensor([[4.0, 3.0]])]
+
+    metrics = _logits_trace_metrics(left, right)
+
+    assert metrics["finite"] is False
+    assert metrics["min_cosine"] is None
+    assert metrics["max_abs_diff"] is None
+    assert metrics["worst_index"] == 1
+    assert metrics["greedy_match"] is False
+
+
+def test_parity_failure_row_preserves_structured_diagnostics() -> None:
+    parity = {
+        "qwen_graph_parity_verified": False,
+        "qwen_graph_logits_trace_finite": False,
+        "qwen_graph_logits_min_cosine": None,
+        "qwen_graph_logits_max_abs_diff": None,
+        "qwen_graph_logits_worst_index": 7,
+    }
+    result = failure_row(worker_args(), QwenCudaGraphParityError(parity))
+
+    assert result["status"] == "fail"
+    assert result["qwen_graph_logits_trace_finite"] is False
+    assert result["qwen_graph_logits_worst_index"] == 7
+    assert "Infinity" not in json.dumps(result, allow_nan=False)
 
 
 def test_resident_exact_cells_avoid_cartesian_reruns() -> None:
@@ -1156,6 +1187,9 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         "qwen_graph_prefill_next_token_match": True,
         "qwen_graph_greedy_match": True,
         "qwen_static_cache_eager_greedy_match": True,
+        "qwen_graph_logits_trace_finite": True,
+        "qwen_dynamic_static_logits_finite": True,
+        "qwen_static_compiled_logits_finite": True,
         "qwen_cache_pointer_stable": True,
         "qwen_graph_break_count": 0,
         "qwen_cudagraph_skip_count": 0,
@@ -1176,6 +1210,14 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         reduce_args,
         {**passing, "qwen_compile_mode_effective": "reduce-overhead"},
     )
+    for field in (
+        "qwen_graph_logits_trace_finite",
+        "qwen_dynamic_static_logits_finite",
+        "qwen_static_compiled_logits_finite",
+    ):
+        for invalid in (False, 1, None):
+            with pytest.raises(RuntimeError, match=field):
+                validate_qwen_result_contract(args, {**passing, field: invalid})
     with pytest.raises(RuntimeError, match="qwen_decode_cuda_graph_verified=False"):
         validate_qwen_result_contract(
             args, {**passing, "qwen_decode_cuda_graph_verified": False}

@@ -51,9 +51,15 @@ def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
 
 
 def _require(row: dict[str, Any], field: str, expected: Any, errors: list[str]) -> None:
-    if row.get(field) != expected:
+    actual = row.get(field)
+    matches = (
+        type(actual) is bool and actual is expected
+        if isinstance(expected, bool)
+        else actual == expected
+    )
+    if not matches:
         errors.append(
-            f"{row.get('_source', '<row>')}: {field}={row.get(field)!r}, "
+            f"{row.get('_source', '<row>')}: {field}={actual!r}, "
             f"expected {expected!r}"
         )
 
@@ -142,6 +148,9 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("qwen_graph_greedy_match", True),
         ("qwen_static_cache_eager_greedy_match", True),
         ("qwen_graph_logits_greedy_match", True),
+        ("qwen_graph_logits_trace_finite", True),
+        ("qwen_dynamic_static_logits_finite", True),
+        ("qwen_static_compiled_logits_finite", True),
         ("logits_finite", True),
     ):
         _require(row, field, expected, errors)

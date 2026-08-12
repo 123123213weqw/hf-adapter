@@ -220,12 +220,16 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def failure_row(args: argparse.Namespace, exc: BaseException) -> dict[str, Any]:
-    return {
+    row = {
         **base_row(args),
         "status": "fail",
         "error_type": type(exc).__name__,
         "error": repr(exc),
     }
+    parity = getattr(exc, "qwen_graph_parity", None)
+    if isinstance(parity, dict):
+        row.update(parity)
+    return row
 
 
 def cuda_sync(device: str) -> None:
@@ -1130,12 +1134,26 @@ def _logits_trace_metrics(
 ) -> dict[str, Any]:
     if len(left) != len(right) or not left:
         raise RuntimeError("logits traces must have the same non-zero length")
+    non_finite_indices = [
+        index
+        for index, (a, b) in enumerate(zip(left, right))
+        if not bool(torch.isfinite(a).all()) or not bool(torch.isfinite(b).all())
+    ]
+    if non_finite_indices:
+        return {
+            "finite": False,
+            "min_cosine": None,
+            "max_abs_diff": None,
+            "worst_index": int(non_finite_indices[0]),
+            "greedy_match": False,
+        }
     cosines = [_minimum_cosine(a, b) for a, b in zip(left, right)]
     max_abs = max(
         float((a.float() - b.float()).abs().max().item())
         for a, b in zip(left, right)
     )
     return {
+        "finite": True,
         "min_cosine": min(cosines),
         "max_abs_diff": max_abs,
         "worst_index": min(range(len(cosines)), key=cosines.__getitem__),
@@ -1144,6 +1162,15 @@ def _logits_trace_metrics(
             for a, b in zip(left, right)
         ),
     }
+
+
+class QwenCudaGraphParityError(RuntimeError):
+    def __init__(self, parity: dict[str, Any]) -> None:
+        self.qwen_graph_parity = dict(parity)
+        super().__init__(
+            "Qwen CUDA Graph parity failed: "
+            + json.dumps(parity, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        )
 
 
 def verify_qwen_cuda_graph_parity(
@@ -1189,8 +1216,14 @@ def verify_qwen_cuda_graph_parity(
     dynamic_compiled = _logits_trace_metrics(dynamic_logits, compiled_logits)
     dynamic_static = _logits_trace_metrics(dynamic_logits, static_logits)
     static_compiled = _logits_trace_metrics(static_logits, compiled_logits)
-    minimum_cosine = float(dynamic_compiled["min_cosine"])
-    max_abs_diff = float(dynamic_compiled["max_abs_diff"])
+    minimum_cosine = dynamic_compiled["min_cosine"]
+    max_abs_diff = dynamic_compiled["max_abs_diff"]
+    cosine_pass = all(
+        bool(metrics["finite"])
+        and isinstance(metrics["min_cosine"], (int, float))
+        and float(metrics["min_cosine"]) >= 0.9999
+        for metrics in (dynamic_compiled, dynamic_static, static_compiled)
+    )
     logits_greedy_match = bool(dynamic_compiled["greedy_match"])
     verified = (
         runner.cuda_graph_verified
@@ -1199,9 +1232,10 @@ def verify_qwen_cuda_graph_parity(
         and static_eager_match
         and greedy_match
         and logits_greedy_match
-        and minimum_cosine >= 0.9999
-        and float(dynamic_static["min_cosine"]) >= 0.9999
-        and float(static_compiled["min_cosine"]) >= 0.9999
+        and bool(dynamic_compiled["finite"])
+        and bool(dynamic_static["finite"])
+        and bool(static_compiled["finite"])
+        and cosine_pass
     )
     return {
         "qwen_graph_parity_verified": verified,
@@ -1214,22 +1248,17 @@ def verify_qwen_cuda_graph_parity(
         "qwen_graph_distinct_batch_prompts": int(ids.shape[0]) > 1,
         "qwen_graph_logits_min_cosine": minimum_cosine,
         "qwen_graph_logits_max_abs_diff": max_abs_diff,
+        "qwen_graph_logits_trace_finite": bool(dynamic_compiled["finite"]),
         "qwen_graph_logits_worst_index": int(dynamic_compiled["worst_index"]),
-        "qwen_dynamic_static_logits_min_cosine": float(
-            dynamic_static["min_cosine"]
-        ),
-        "qwen_dynamic_static_logits_max_abs_diff": float(
-            dynamic_static["max_abs_diff"]
-        ),
+        "qwen_dynamic_static_logits_min_cosine": dynamic_static["min_cosine"],
+        "qwen_dynamic_static_logits_max_abs_diff": dynamic_static["max_abs_diff"],
+        "qwen_dynamic_static_logits_finite": bool(dynamic_static["finite"]),
         "qwen_dynamic_static_logits_worst_index": int(
             dynamic_static["worst_index"]
         ),
-        "qwen_static_compiled_logits_min_cosine": float(
-            static_compiled["min_cosine"]
-        ),
-        "qwen_static_compiled_logits_max_abs_diff": float(
-            static_compiled["max_abs_diff"]
-        ),
+        "qwen_static_compiled_logits_min_cosine": static_compiled["min_cosine"],
+        "qwen_static_compiled_logits_max_abs_diff": static_compiled["max_abs_diff"],
+        "qwen_static_compiled_logits_finite": bool(static_compiled["finite"]),
         "qwen_static_compiled_logits_worst_index": int(
             static_compiled["worst_index"]
         ),
@@ -1249,10 +1278,7 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
             runner = QwenStaticCacheInductorCudaGraphDecode(args, model, ids)
             parity = verify_qwen_cuda_graph_parity(args, model, ids, runner)
             if not bool(parity["qwen_graph_parity_verified"]):
-                raise RuntimeError(
-                    "Qwen CUDA Graph parity failed: "
-                    + json.dumps(parity, ensure_ascii=False, sort_keys=True)
-                )
+                raise QwenCudaGraphParityError(parity)
             samples = [runner.timed() for _ in range(int(args.runs))]
             return {
                 "median_s": float(statistics.median(samples)),
@@ -1320,12 +1346,15 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
         "qwen_graph_logits_greedy_match": None,
         "qwen_graph_logits_min_cosine": None,
         "qwen_graph_logits_max_abs_diff": None,
+        "qwen_graph_logits_trace_finite": None,
         "qwen_graph_logits_worst_index": None,
         "qwen_dynamic_static_logits_min_cosine": None,
         "qwen_dynamic_static_logits_max_abs_diff": None,
+        "qwen_dynamic_static_logits_finite": None,
         "qwen_dynamic_static_logits_worst_index": None,
         "qwen_static_compiled_logits_min_cosine": None,
         "qwen_static_compiled_logits_max_abs_diff": None,
+        "qwen_static_compiled_logits_finite": None,
         "qwen_static_compiled_logits_worst_index": None,
         "qwen_graph_scope": None,
         "qwen_graph_capture_s": None,
@@ -1799,6 +1828,9 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "qwen_graph_prefill_next_token_match": True,
                 "qwen_graph_greedy_match": True,
                 "qwen_static_cache_eager_greedy_match": True,
+                "qwen_graph_logits_trace_finite": True,
+                "qwen_dynamic_static_logits_finite": True,
+                "qwen_static_compiled_logits_finite": True,
                 "qwen_cache_pointer_stable": True,
                 "qwen_graph_break_count": 0,
                 "qwen_cudagraph_skip_count": 0,
@@ -1812,10 +1844,15 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "cache_type": "StaticCache",
             }
         )
+    def matches_expected(actual: Any, expected: Any) -> bool:
+        if isinstance(expected, bool):
+            return type(actual) is bool and actual is expected
+        return actual == expected
+
     mismatches = [
         f"{field}={row.get(field)!r} (expected {expected!r})"
         for field, expected in required.items()
-        if row.get(field) != expected
+        if not matches_expected(row.get(field), expected)
     ]
     if mismatches:
         raise RuntimeError("Qwen3.5 result row failed the requested fast-path contract: " + "; ".join(mismatches))
@@ -2015,6 +2052,9 @@ def benchmark_loaded(
         "qwen_graph_logits_max_abs_diff": decode_timing[
             "qwen_graph_logits_max_abs_diff"
         ],
+        "qwen_graph_logits_trace_finite": decode_timing[
+            "qwen_graph_logits_trace_finite"
+        ],
         "qwen_graph_logits_worst_index": decode_timing[
             "qwen_graph_logits_worst_index"
         ],
@@ -2024,6 +2064,9 @@ def benchmark_loaded(
         "qwen_dynamic_static_logits_max_abs_diff": decode_timing[
             "qwen_dynamic_static_logits_max_abs_diff"
         ],
+        "qwen_dynamic_static_logits_finite": decode_timing[
+            "qwen_dynamic_static_logits_finite"
+        ],
         "qwen_dynamic_static_logits_worst_index": decode_timing[
             "qwen_dynamic_static_logits_worst_index"
         ],
@@ -2032,6 +2075,9 @@ def benchmark_loaded(
         ],
         "qwen_static_compiled_logits_max_abs_diff": decode_timing[
             "qwen_static_compiled_logits_max_abs_diff"
+        ],
+        "qwen_static_compiled_logits_finite": decode_timing[
+            "qwen_static_compiled_logits_finite"
         ],
         "qwen_static_compiled_logits_worst_index": decode_timing[
             "qwen_static_compiled_logits_worst_index"
