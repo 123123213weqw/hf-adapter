@@ -7,8 +7,9 @@ FLA_SOURCE="${FLA_SOURCE:-}"
 CAUSAL_CONV1D_SOURCE="${CAUSAL_CONV1D_SOURCE:-}"
 OUT_DIR="${OUT_DIR:-}"
 FLA_SOURCE_COMMIT="${FLA_SOURCE_COMMIT:-2e38c1fab332174d056928feaf29f8c5fd5ac550}"
-CAUSAL_CONV1D_SOURCE_COMMIT="${CAUSAL_CONV1D_SOURCE_COMMIT:-82867a9d2e6907cc0f637ac6aff318f696838548}"
+CAUSAL_CONV1D_SOURCE_COMMIT="${CAUSAL_CONV1D_SOURCE_COMMIT:-4f6ae4e26ae5fe8af9372f8d312ab25cc4595223}"
 TORCH_CUDA_ARCH_LIST="8.6;8.9;12.0"
+NVCC_PREPEND_FLAGS="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 -gencode=arch=compute_120,code=sm_120"
 
 if [[ -z "${FLA_SOURCE}" || -z "${CAUSAL_CONV1D_SOURCE}" || -z "${OUT_DIR}" ]]; then
   echo "FLA_SOURCE, CAUSAL_CONV1D_SOURCE and OUT_DIR are required" >&2
@@ -42,6 +43,7 @@ fi
 
 mkdir -p "${OUT_DIR}"
 export TORCH_CUDA_ARCH_LIST
+export NVCC_PREPEND_FLAGS
 export CAUSAL_CONV1D_FORCE_BUILD=TRUE
 
 "${PYTHON_BIN}" - <<'PY'
@@ -75,6 +77,7 @@ manifest = {
     "torch_version": str(torch.__version__),
     "torch_cuda_version": str(torch.version.cuda),
     "torch_cuda_arch_list": os.environ["TORCH_CUDA_ARCH_LIST"],
+    "nvcc_prepend_flags": os.environ["NVCC_PREPEND_FLAGS"],
     "fla_version": version("flash-linear-attention"),
     "fla_source_commit": fla_commit,
     "causal_conv1d_version": version("causal-conv1d"),
