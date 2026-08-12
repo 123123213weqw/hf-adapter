@@ -14,6 +14,7 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
     return {
         "axis": "qwen35_cross_model_speed",
         "benchmark_matrix": "qwen35_best_optimized_hf_v1",
+        "benchmark_repository_commit": "test-commit",
         "optimization_lane": "qwen_best_optimized_hf",
         "model_pair": pair,
         "model_size_label": PAIRS[pair],
@@ -75,6 +76,8 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "qwen_static_cache_eager_greedy_match": True,
         "qwen_graph_logits_greedy_match": True,
         "qwen_graph_logits_min_cosine": 0.99999,
+        "qwen_dynamic_static_logits_min_cosine": 0.99999,
+        "qwen_static_compiled_logits_min_cosine": 0.99999,
         "qwen_graph_max_cache_len": prompt + 3 + decode,
         "qwen_graph_probe_tokens": 3 + decode,
         "qwen_graph_logits_probe_tokens": 16,
@@ -110,6 +113,31 @@ def test_complete_best_optimized_qwen_matrix_passes() -> None:
     assert summary["reference_rows"] == 48
     assert summary["reference_lane_eligible"] is True
     assert summary["unified_main_table_eligible"] is False
+
+
+def test_reduce_overhead_rows_are_valid_when_all_graph_gates_pass() -> None:
+    rows = complete_rows()
+    for item in rows:
+        if item["model_size_label"] == "0.8b":
+            item["qwen_compile_mode_effective"] = "reduce-overhead"
+    summary = validate_matrix(rows, expected_device="NVIDIA GeForce RTX 5090")
+    assert summary["status"] == "pass"
+
+
+def test_one_model_cannot_mix_compile_modes_across_cells() -> None:
+    rows = complete_rows()
+    rows[0]["qwen_compile_mode_effective"] = "reduce-overhead"
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("mixed compile modes" in error for error in summary["errors"])
+
+
+def test_rows_must_record_one_benchmark_repository_commit() -> None:
+    rows = complete_rows()
+    rows[0]["benchmark_repository_commit"] = "other-commit"
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("repository commit" in error for error in summary["errors"])
 
 
 def test_graph_fallback_or_missing_cell_fails() -> None:

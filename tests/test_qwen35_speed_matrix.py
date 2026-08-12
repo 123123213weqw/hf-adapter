@@ -1113,6 +1113,7 @@ def graph_worker_args(**updates) -> Namespace:
         "require_qwen_fast_path": True,
         "qwen_decode_optimization": "static_cache_inductor_cudagraph",
         "qwen_graph_probe_tokens": 16,
+        "qwen_compile_mode": "max-autotune",
         "optimization_lane": "qwen_best_optimized_hf",
         "batch_size": 1,
         "prompt_tokens": 128,
@@ -1130,6 +1131,9 @@ def graph_worker_args(**updates) -> Namespace:
 
 def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     validate_args(graph_worker_args())
+    validate_args(graph_worker_args(qwen_compile_mode="reduce-overhead"))
+    with pytest.raises(ValueError, match="--qwen-compile-mode"):
+        validate_args(graph_worker_args(qwen_compile_mode="invalid"))
     with pytest.raises(ValueError, match="strict Qwen reference lane"):
         validate_args(graph_worker_args(optimization_lane=""))
     with pytest.raises(ValueError, match="strict Qwen reference lane"):
@@ -1158,6 +1162,8 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         "qwen_compile_backend_effective": "inductor",
         "qwen_compile_mode_effective": "max-autotune",
         "qwen_graph_logits_min_cosine": 0.99999,
+        "qwen_dynamic_static_logits_min_cosine": 0.99999,
+        "qwen_static_compiled_logits_min_cosine": 0.99999,
         "step_backend": "qwen_static_cache_inductor_cudagraph",
         "prefill_backend_effective": "module_call_dynamic_cache",
         "prefill_cache_type": "DynamicCache",
@@ -1165,6 +1171,11 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     }
     args = graph_worker_args()
     validate_qwen_result_contract(args, passing)
+    reduce_args = graph_worker_args(qwen_compile_mode="reduce-overhead")
+    validate_qwen_result_contract(
+        reduce_args,
+        {**passing, "qwen_compile_mode_effective": "reduce-overhead"},
+    )
     with pytest.raises(RuntimeError, match="qwen_decode_cuda_graph_verified=False"):
         validate_qwen_result_contract(
             args, {**passing, "qwen_decode_cuda_graph_verified": False}
@@ -1172,6 +1183,10 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     with pytest.raises(RuntimeError, match="expected >=0.9999"):
         validate_qwen_result_contract(
             args, {**passing, "qwen_graph_logits_min_cosine": 0.9998}
+        )
+    with pytest.raises(RuntimeError, match="qwen_static_compiled_logits_min_cosine"):
+        validate_qwen_result_contract(
+            args, {**passing, "qwen_static_compiled_logits_min_cosine": 0.9998}
         )
 
 

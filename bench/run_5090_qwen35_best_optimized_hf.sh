@@ -13,6 +13,8 @@ BENCHMARK_MATRIX="qwen35_best_optimized_hf_v1"
 OPTIMIZATION_LANE="qwen_best_optimized_hf"
 FLA_SOURCE_COMMIT="${FLA_SOURCE_COMMIT:-}"
 CAUSAL_CONV1D_SOURCE_COMMIT="${CAUSAL_CONV1D_SOURCE_COMMIT:-}"
+QWEN_COMPILE_MODE="${QWEN_COMPILE_MODE:-max-autotune}"
+REPOSITORY_COMMIT="${REPOSITORY_COMMIT:-}"
 
 if [[ -z "${OUT_DIR}" || -z "${MODEL}" || -z "${MODEL_PAIR}" || -z "${MODEL_SIZE_LABEL}" ]]; then
   echo "usage: $0 OUT_DIR MODEL MODEL_PAIR MODEL_SIZE_LABEL" >&2
@@ -22,8 +24,12 @@ if [[ ! -d "${MODEL}" ]]; then
   echo "MODEL must name a local Qwen3.5 directory: ${MODEL}" >&2
   exit 2
 fi
-if [[ -z "${FLA_SOURCE_COMMIT}" || -z "${CAUSAL_CONV1D_SOURCE_COMMIT}" ]]; then
-  echo "FLA_SOURCE_COMMIT and CAUSAL_CONV1D_SOURCE_COMMIT are required" >&2
+if [[ -z "${FLA_SOURCE_COMMIT}" || -z "${CAUSAL_CONV1D_SOURCE_COMMIT}" || -z "${REPOSITORY_COMMIT}" ]]; then
+  echo "FLA_SOURCE_COMMIT, CAUSAL_CONV1D_SOURCE_COMMIT and REPOSITORY_COMMIT are required" >&2
+  exit 2
+fi
+if [[ "${QWEN_COMPILE_MODE}" != "reduce-overhead" && "${QWEN_COMPILE_MODE}" != "max-autotune" ]]; then
+  echo "QWEN_COMPILE_MODE must be reduce-overhead or max-autotune" >&2
   exit 2
 fi
 
@@ -31,7 +37,7 @@ mkdir -p "${OUT_DIR}/logs"
 export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-12.0}"
-export FLA_SOURCE_COMMIT CAUSAL_CONV1D_SOURCE_COMMIT
+export FLA_SOURCE_COMMIT CAUSAL_CONV1D_SOURCE_COMMIT REPOSITORY_COMMIT
 
 gpu_name="$(${PYTHON_BIN} - <<'PY'
 import torch
@@ -66,6 +72,7 @@ cd "${ROOT}"
   --qwen-conv-backend causal_conv1d \
   --require-qwen-fast-path \
   --qwen-decode-optimization static_cache_inductor_cudagraph \
+  --qwen-compile-mode "${QWEN_COMPILE_MODE}" \
   --qwen-graph-probe-tokens 16 \
   --fail-fast \
   --results "${result}" > "${log}" 2>&1

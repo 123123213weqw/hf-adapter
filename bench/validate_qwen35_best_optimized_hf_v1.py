@@ -32,7 +32,10 @@ RUNTIME_FIELDS = (
     "fla_version",
     "causal_conv1d_version",
 )
-QWEN_CONTRACT = "official_fla_causal_conv1d_static_cache_inductor_cudagraph"
+QWEN_CONTRACT = (
+    "official_fla_causal_conv1d_static_cache_inductor_cudagraph_tri_oracle"
+)
+QWEN_COMPILE_MODES = {"reduce-overhead", "max-autotune"}
 
 
 def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -124,7 +127,6 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("prefill_cache_type", "DynamicCache"),
         ("cache_type", "StaticCache"),
         ("qwen_compile_backend_effective", "inductor"),
-        ("qwen_compile_mode_effective", "max-autotune"),
         ("qwen_compile_fullgraph_effective", False),
         ("qwen_compile_dynamic_effective", False),
         ("qwen_graph_scope", "single_token_hf_qwen_forward"),
@@ -143,6 +145,12 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("logits_finite", True),
     ):
         _require(row, field, expected, errors)
+    compile_mode = row.get("qwen_compile_mode_effective")
+    if compile_mode not in QWEN_COMPILE_MODES:
+        errors.append(
+            f"{row.get('_source', '<row>')}: qwen_compile_mode_effective="
+            f"{compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+        )
     if expected_device:
         _require(row, "device", expected_device, errors)
 
@@ -161,12 +169,17 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
     _require(row, "qwen_graph_probe_tokens", 3 + decode, errors)
     _require(row, "qwen_graph_logits_probe_tokens", 16, errors)
     _require(row, "qwen_graph_distinct_batch_prompts", batch > 1, errors)
-    minimum_cosine = row.get("qwen_graph_logits_min_cosine")
-    if not isinstance(minimum_cosine, (int, float)) or minimum_cosine < 0.9999:
-        errors.append(
-            f"{row.get('_source', '<row>')}: qwen_graph_logits_min_cosine="
-            f"{minimum_cosine!r}, expected >=0.9999"
-        )
+    for field in (
+        "qwen_graph_logits_min_cosine",
+        "qwen_dynamic_static_logits_min_cosine",
+        "qwen_static_compiled_logits_min_cosine",
+    ):
+        minimum_cosine = row.get(field)
+        if not isinstance(minimum_cosine, (int, float)) or minimum_cosine < 0.9999:
+            errors.append(
+                f"{row.get('_source', '<row>')}: {field}="
+                f"{minimum_cosine!r}, expected >=0.9999"
+            )
     for field in (
         "qwen_cudagraph_recorded_non_static_inputs",
         "qwen_cuda_graph_launch_count",
@@ -211,6 +224,18 @@ def validate_matrix(
         errors.append(f"reference row count={len(rows)}, expected 48")
     for row in rows:
         _validate_row(row, expected_device, errors)
+    repository_commits = sorted(
+        {
+            str(row.get("benchmark_repository_commit"))
+            for row in rows
+            if row.get("benchmark_repository_commit")
+        }
+    )
+    if len(repository_commits) != 1:
+        errors.append(
+            "rows did not record exactly one benchmark repository commit: "
+            + json.dumps(repository_commits)
+        )
 
     expected_keys = {(pair, *shape) for pair in PAIRS for shape in EXPECTED_SHAPES}
     keys = [
@@ -243,6 +268,20 @@ def validate_matrix(
             "rows were not produced by one locked runtime signature: "
             + json.dumps(sorted(runtime_signatures, key=repr), ensure_ascii=False)
         )
+    compile_modes_by_model: dict[str, list[str]] = {}
+    for pair in PAIRS:
+        modes = sorted(
+            {
+                str(row.get("qwen_compile_mode_effective"))
+                for row in rows
+                if row.get("model_pair") == pair
+            }
+        )
+        compile_modes_by_model[PAIRS[pair]] = modes
+        if len(modes) != 1:
+            errors.append(
+                f"model pair {pair} mixed compile modes across its 12 cells: {modes}"
+            )
     devices = sorted({str(row.get("device")) for row in rows})
     return {
         "schema_version": 1,
@@ -254,6 +293,8 @@ def validate_matrix(
         "devices": devices,
         "runtime_fields": list(RUNTIME_FIELDS),
         "runtime_signature_count": len(runtime_signatures),
+        "benchmark_repository_commits": repository_commits,
+        "compile_modes_by_model": compile_modes_by_model,
         "qwen_contract": QWEN_CONTRACT,
         "reference_lane_eligible": not errors,
         "unified_main_table_eligible": False,

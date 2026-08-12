@@ -101,6 +101,11 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--qwen-graph-probe-tokens", type=int, default=16)
     ap.add_argument(
+        "--qwen-compile-mode",
+        choices=["reduce-overhead", "max-autotune"],
+        default="max-autotune",
+    )
+    ap.add_argument(
         "--probe-output",
         default="",
         help="Optional backend-probe output path forwarded to the shared worker.",
@@ -189,6 +194,7 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
             args, "qwen_decode_optimization", "module_call_dynamic"
         ),
         qwen_graph_probe_tokens=getattr(args, "qwen_graph_probe_tokens", 16),
+        qwen_compile_mode=getattr(args, "qwen_compile_mode", "max-autotune"),
         probe_output=args.probe_output,
         probe_tokens=args.probe_tokens,
         results=args.results,
