@@ -209,6 +209,7 @@ fi
 
 run_rwkv() {
   local model="$1" pair="$2" size="$3" output="$4" log="$5"
+  shift 5
   "${PYTHON_BIN}" bench/bench_cross_model_speed_resident.py \
     --model "${model}" \
     --model-kind rwkv \
@@ -229,7 +230,8 @@ run_rwkv() {
     --rwkv-attn-mode fused_recurrent \
     --rwkv-code-source repo \
     --fail-fast \
-    --results "${output}" > "${log}" 2>&1
+    --results "${output}" \
+    "$@" > "${log}" 2>&1
 }
 
 run_rwkv "${RWKV_04_MODEL}" rwkv-0.4b__qwen3.5-0.8b 0.4b \
@@ -238,8 +240,30 @@ run_rwkv "${RWKV_15_MODEL}" rwkv-1.5b__qwen3.5-2b 1.5b \
   "${OUT_DIR}/rwkv_1p5.jsonl" "${OUT_DIR}/logs/rwkv_1p5.log"
 run_rwkv "${RWKV_29_MODEL}" rwkv-2.9b__qwen3.5-4b 2.9b \
   "${OUT_DIR}/rwkv_2p9.jsonl" "${OUT_DIR}/logs/rwkv_2p9.log"
-run_rwkv "${RWKV_72_MODEL}" rwkv-7.2b__qwen3.5-9b 7.2b \
-  "${OUT_DIR}/rwkv_7p2.jsonl" "${OUT_DIR}/logs/rwkv_7p2.log"
+if [[ "${GPU_MODEL}" == "4090" && "${RWKV_OPTIMIZATION_LANE}" == "best_optimized_hf" ]]; then
+  # The full 7.2B B8/P2048 prefill Graph exceeds the 4090's 24GB by about
+  # 128MiB. Keep native Graph decode, but use the faster fitting native
+  # prefill route for only those two cells.
+  export RWKV7_NATIVE_PREFILL_GRAPH=1
+  run_rwkv "${RWKV_72_MODEL}" rwkv-7.2b__qwen3.5-9b 7.2b \
+    "${OUT_DIR}/rwkv_7p2_graph.jsonl" "${OUT_DIR}/logs/rwkv_7p2_graph.log" \
+    --cells \
+      1x128x128 1x128x512 1x512x128 1x512x512 1x2048x128 1x2048x512 \
+      8x128x128 8x128x512 8x512x128 8x512x512
+  export RWKV7_NATIVE_PREFILL_GRAPH=0
+  run_rwkv "${RWKV_72_MODEL}" rwkv-7.2b__qwen3.5-9b 7.2b \
+    "${OUT_DIR}/rwkv_7p2_noprefill_graph.jsonl" \
+    "${OUT_DIR}/logs/rwkv_7p2_noprefill_graph.log" \
+    --cells 8x2048x128 8x2048x512
+  cat \
+    "${OUT_DIR}/rwkv_7p2_graph.jsonl" \
+    "${OUT_DIR}/rwkv_7p2_noprefill_graph.jsonl" \
+    > "${OUT_DIR}/rwkv_7p2.jsonl"
+  export RWKV7_NATIVE_PREFILL_GRAPH=1
+else
+  run_rwkv "${RWKV_72_MODEL}" rwkv-7.2b__qwen3.5-9b 7.2b \
+    "${OUT_DIR}/rwkv_7p2.jsonl" "${OUT_DIR}/logs/rwkv_7p2.log"
+fi
 
 "${PYTHON_BIN}" bench/validate_hf_fast_path_v1.py \
   --candidate-results \

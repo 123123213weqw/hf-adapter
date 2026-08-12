@@ -136,6 +136,15 @@ def test_best_optimized_hf_contract_requires_graph_routes() -> None:
     assert summary["status"] == "pass"
     assert summary["rwkv_contract"] == "exact_card_best_optimized_hf"
 
+    candidates[0]["rwkv_prefill_graph_requested"] = "0"
+    candidates[0]["prefill_backend_effective"] = "native_prefill"
+    summary = validate_matrix(
+        candidates,
+        complete_rows("reference"),
+        rwkv_contract="best_optimized_hf",
+    )
+    assert summary["status"] == "pass"
+
     candidates[0]["effective_backend"] = "native_jit"
     summary = validate_matrix(
         candidates,
@@ -164,6 +173,8 @@ def test_single_card_script_is_official_and_fail_closed() -> None:
     assert "RWKV7_NATIVE_PREFILL_GRAPH=1" in text
     assert "diagnostic_no_graph" in text
     assert "QWEN_REFERENCE_DIR" in text
+    assert "8x2048x128 8x2048x512" in text
+    assert "rwkv_7p2_noprefill_graph.jsonl" in text
     assert '--optimization-lane "${RWKV_OPTIMIZATION_LANE}"' in text
     assert '--rwkv-contract "${RWKV_OPTIMIZATION_LANE}"' in text
     assert "SM120 official HF fast path unverified" in text

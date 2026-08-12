@@ -108,10 +108,26 @@ def _validate_candidate(
         for field, expected in (
             ("rwkv_fast_token_backend_requested", "native_graph"),
             ("rwkv_native_model_backend_requested", "native_graph"),
-            ("rwkv_prefill_graph_requested", "1"),
             ("effective_backend", "native_graph"),
         ):
             _require(row, field, expected, errors)
+        prefill_graph_requested = row.get("rwkv_prefill_graph_requested")
+        if prefill_graph_requested not in {"0", "1"}:
+            errors.append(
+                f"{row.get('_source', '<row>')}: rwkv_prefill_graph_requested="
+                f"{prefill_graph_requested!r}, expected '0' or '1'"
+            )
+        prefill_backend = str(row.get("prefill_backend_effective", ""))
+        if prefill_graph_requested == "1" and "graph" not in prefill_backend.lower():
+            errors.append(
+                f"{row.get('_source', '<row>')}: requested prefill Graph but effective "
+                f"backend is {prefill_backend!r}"
+            )
+        if prefill_graph_requested == "0" and "graph" in prefill_backend.lower():
+            errors.append(
+                f"{row.get('_source', '<row>')}: disabled prefill Graph but effective "
+                f"backend is {prefill_backend!r}"
+            )
         return
 
     errors.append(f"unsupported RWKV contract: {rwkv_contract!r}")
