@@ -17,9 +17,9 @@ the full platform, quantization, and acceptance details.
 > original PASS status applies only to its original local gate. It is excluded
 > from the new RTX 3090/4090/5090 main table until rerun with one locked
 > Python/PyTorch/CUDA/Transformers/FLA/causal-conv/repository environment,
-> official Dao-AILab `causal_conv1d`, and the RWKV `native_jit` no-Graph fair
-> lane. `fla_triton` and CUDA-Graph results may appear only in experimental or
-> best-optimized appendices.
+> official Dao-AILab `causal_conv1d`, and an explicitly labelled RWKV lane.
+> The primary performance lane is exact-card `best_optimized_hf`; the no-Graph
+> `native_jit` matrix remains diagnostic evidence and must not be mixed with it.
 
 ## Benchmark contract
 
@@ -38,26 +38,30 @@ Status vocabulary:
 
 ## Unified Qwen comparator status
 
-RTX 4090 completed the superseding `hf_fast_path_v1` matrix on 2026-08-12.
-The artifact has 48/48 official FLA + Dao-AILab causal-conv1d Qwen rows and
-48/48 RWKV `native_jit` rows with CUDA Graph disabled. All 96 rows share one
-locked runtime signature; the fail-closed validator reports no errors or
-fallback.
+RTX 4090 completed the superseding `hf_fast_path_v1` shape matrix on
+2026-08-12. The promoted artifact has 48/48 official FLA + Dao-AILab
+causal-conv1d Qwen rows and 48/48 exact-card best-optimized RWKV rows. All 96
+rows share one locked runtime signature; the fail-closed validator reports no
+errors or fallback. Qwen is the strong official HF fast-operator baseline;
+RWKV is intentionally run at its best verified HF state, including CUDA Graph.
 
 | GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
 |---|---|---:|---:|---:|---:|---|
-| RTX 4090 | `hf_fast_path_v1` | 96/96 | 26/48 | 48/48 | 48/48 | **PROTOCOL PASS / Prefill performance partial** |
+| RTX 4090 | `hf_fast_path_v1` + `best_optimized_hf` | 96/96 | 48/48 | 48/48 | 48/48 | **PASS** |
 | RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
 | RTX 5090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
 
-Across the 4090 matrix, raw Decode minimum/median is
-`1.619831x/1.660445x` Qwen and parameter-adjusted Decode is
-`1.995698x/2.266103x`. Parameter-adjusted Prefill has minimum/median
-`0.776985x/1.077582x`, so it does not pass the all-cells-above-Qwen target.
+Across the promoted 4090 matrix, raw Prefill minimum/median is
+`1.361373x/2.315043x` and parameter-adjusted Prefill is
+`1.060506x/1.549011x`. Raw Decode minimum/median is
+`2.275368x/5.871032x` and parameter-adjusted Decode is
+`1.829468x/4.468521x`. Every matched Prefill and Decode cell clears Qwen.
 Corrected Qwen Decode medians for 0.8B/2B/4B/9B are respectively
 `35.512/35.115/25.443/25.499 tok/s` at B1 and
 `268.928/268.261/195.923/197.472 tok/s` at B8. Evidence:
-[`bench/4090_hf_fast_path_v1_20260812/`](bench/4090_hf_fast_path_v1_20260812/README.md).
+[`bench/4090_hf_best_optimized_v1_20260812/`](bench/4090_hf_best_optimized_v1_20260812/README.md).
+The earlier [`native_jit` no-Graph artifact](bench/4090_hf_fast_path_v1_20260812/README.md)
+is retained as a diagnostic lane, not the max-performance headline.
 
 ## Production-close and historical overview
 
@@ -75,7 +79,7 @@ contract above, even where the final column preserves their original PASS label.
 | RTX 4090 | g1h 7.2B vs Qwen3.5-9B, bsz8, dense/W8/W4 | finite logits, fail-closed Qwen FLA routes, BNB8/MM4 same-quant probes; task quality is separate | dense prefill/decode min `1.0240x/2.2101x`; decode active work min `1.7770x`; W8/W4 total-latency and quant-local memory gates pass | **PASS 18/18** |
 | RTX 4090 | 0.4B/0.8B, 1.5B/2B and 2.9B/4B, bsz8, dense/W8/W4 | finite logits, fail-closed native/full-FLA/route contracts; quality is a separate axis | dense prefill min `1.3704x/1.0420x/1.3051x`, decode min `12.1018x/5.6368x/4.2144x`; W8/W4 total latency and physical-memory gates pass | **PASS 54/54** |
 | RTX 4090 | Latest 0.4B/1.5B/2.9B, B1/B8 Prefill plus B8 decode | exact-card 4080-route transfer, forward/reverse A/B, independent recurrent oracle, greedy/cache handoff | block-scoped FP16 accumulation `1.0057x-1.3007x`; grouped W/A/V BMM `1.1259x-1.2002x` | **PASS 108/108 + 18/18 + 9/9** |
-| RTX 4090 | Latest 0.4B/1.5B/2.9B versus full-FLA/Triton-conv Qwen3.5, B1/B8, dense FP16 | 36/36 verified Qwen references; exact 1.5B/B1/P2048 self-chunk Prompt/cache-handoff A/B passes | parameter-adjusted Prefill/Decode minima `1.108265x/4.158943x`; selected tile16+stack route `1.2539x` control | **PASS 36/36 + 36/36** |
+| RTX 4090 | Latest 0.4B/1.5B/2.9B/7.2B versus official-FLA/causal-conv Qwen3.5, B1/B8, dense FP16 | 48/48 verified Qwen references; RWKV graph/cache/greedy/generate checks pass, including memory-bounded 7.2B/B8/P2048 | parameter-adjusted Prefill/Decode minima `1.060506x/1.829468x`; raw minima `1.361373x/2.275368x` | **PASS 48/48 + 48/48** |
 | RTX 4090 | Historical 0.4B dense and W8/W4 speed lanes | 32-step greedy and cache handoff pass | decode `1.007x–1.418x` matching Albatross; bsz4 prefill `1.007x` current-session / `0.916x` historical high-water | **PASS measured lanes** |
 | RTX 4080 | Native HF 0.4B/1.5B/2.9B vs full-FLA Qwen3.5 0.8B/2B/4B, B1/B8; 7.2B/13.3B capacity | fail-closed optimized-Qwen contracts; paired quant cosine/greedy gates; exact-card capacity probes | 6/6 pair matrices pass; dense prefill/decode minima `1.0123x/1.4353x`; A8W8/W4 complete-cell minima `1.0031x/1.0160x`; 13.3B MM8/MM4 fit | **PASS measured lanes** |
 | RTX 4080 | Exact B8 FP16 grouped W/A/V tensor-core projection, 0.4B/1.5B/2.9B | three independent loads per model; first-step logits exact; greedy `4,608/4,608` | median decode gains `1.1267x/1.0942x/1.0809x`; process peak-memory deltas `+2.39%/+1.90%/+1.55%` | **PASS exact B8 lane** |
@@ -579,25 +583,35 @@ Evidence and reproduction:
 
 ## RTX 4090 promoted rows
 
-The current unified comparison is the 2026-08-12 `hf_fast_path_v1` artifact:
-96/96 rows pass the protocol validator, Qwen uses its official FLA plus
-causal-conv1d path without fallback, and RWKV uses `native_jit` without CUDA
-Graph. Decode passes every raw and adjusted comparison cell. Adjusted Prefill
-passes 26/48 cells, so the fair lane is performance-partial rather than an
-all-cell Prefill win. See
-[`bench/4090_hf_fast_path_v1_20260812/README.md`](bench/4090_hf_fast_path_v1_20260812/README.md).
+The current promoted comparison is the 2026-08-12 best-optimized
+`hf_fast_path_v1` shape matrix: 96/96 rows pass the protocol validator, Qwen
+uses official FLA plus Dao-AILab causal-conv1d without fallback, and RWKV uses
+the exact-card best verified HF route. Decode stays on `native_graph` for all
+48 candidate cells. Prefill uses the promoted graph/fused route except
+7.2B/B8/P2048, where Prefill Graph alone is disabled to fit 24 GiB while
+Decode remains graphed. Parameter-adjusted Prefill and Decode both pass 48/48
+cells, with minima `1.060506x/1.829468x`. See
+[`bench/4090_hf_best_optimized_v1_20260812/README.md`](bench/4090_hf_best_optimized_v1_20260812/README.md).
+
+The prior [`native_jit` no-Graph matrix](bench/4090_hf_fast_path_v1_20260812/README.md)
+remains useful for framework-overhead diagnosis, but is no longer the primary
+performance result.
 
 The older rows below retain their original exact-card gates but are historical
 under the unified Qwen comparator contract.
 
-The 2026-08-12 exact-card transfer from the RTX 4080 work promotes two narrow
-routes for latest g1d/g1i 0.4B/1.5B/2.9B checkpoints. Block-scoped FP16 GEMM
-accumulation passes all 108 forward/reverse screening rows and all 18
-default-policy direct-native oracle rows at B1/B8 and P128/P512/P2048. The B8
+The 2026-08-12 exact-card transfer from the RTX 4080 work promotes narrow
+routes for latest g1d/g1i 0.4B/1.5B/2.9B checkpoints, now extended to the exact
+g1i 7.2B B1/B8 P128/P512/P2048 shapes. Block-scoped FP16 GEMM accumulation
+passes the original 108 forward/reverse screening rows and 18 default-policy
+direct-native oracle rows, plus 36/36 7.2B A/B rows. The 7.2B block route gains
+`1.0100x-1.4370x` across the measured shapes while retaining prompt/cache and
+greedy correctness. The B8
 grouped W/A/V BMM passes nine independent rows with median gains
 `1.2002x/1.1426x/1.1259x`, complete greedy equality, and explicit VRAM
-telemetry. These allowlists do not widen to other batches, hidden=4096, RTX
-4090 variants, or adjacent Ada products. Evidence:
+telemetry. The grouped-BMM allowlist still does not widen to hidden=4096; none
+of these exact routes widens to other batches, models, RTX 4090 variants, or
+adjacent Ada products. Evidence:
 [`bench/4090_4080_routes_20260812/README.md`](bench/4090_4080_routes_20260812/README.md).
 
 The strict follow-up compares latest RWKV-7 0.4B/1.5B/2.9B with official
