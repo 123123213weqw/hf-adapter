@@ -95,6 +95,12 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--require-qwen-fast-path", action="store_true")
     ap.add_argument(
+        "--qwen-decode-optimization",
+        choices=["module_call_dynamic", "static_cache_inductor_cudagraph"],
+        default="module_call_dynamic",
+    )
+    ap.add_argument("--qwen-graph-probe-tokens", type=int, default=16)
+    ap.add_argument(
         "--probe-output",
         default="",
         help="Optional backend-probe output path forwarded to the shared worker.",
@@ -179,6 +185,10 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
         qwen_backend=args.qwen_backend,
         qwen_conv_backend=getattr(args, "qwen_conv_backend", "auto"),
         require_qwen_fast_path=args.require_qwen_fast_path,
+        qwen_decode_optimization=getattr(
+            args, "qwen_decode_optimization", "module_call_dynamic"
+        ),
+        qwen_graph_probe_tokens=getattr(args, "qwen_graph_probe_tokens", 16),
         probe_output=args.probe_output,
         probe_tokens=args.probe_tokens,
         results=args.results,

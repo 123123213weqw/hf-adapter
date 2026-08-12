@@ -32,6 +32,7 @@ RWKV_CONTRACTS = {
     "diagnostic_no_graph": "native_jit_without_cuda_graph",
     "best_optimized_hf": "exact_card_best_optimized_hf",
 }
+QWEN_CONTRACT = "official_fla_plus_causal_conv1d_module_call_dynamic_cache"
 
 
 def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -144,6 +145,8 @@ def _validate_reference(row: dict[str, Any], errors: list[str]) -> None:
         ("qwen_causal_conv1d_importable", True),
         ("qwen_conv_backend_effective", "causal_conv1d"),
         ("qwen_force_torch", False),
+        ("step_backend", "module_call"),
+        ("cache_type", "DynamicCache"),
     ):
         _require(row, field, expected, errors)
 
@@ -210,7 +213,7 @@ def validate_matrix(
         "devices": devices,
         "runtime_fields": list(RUNTIME_FIELDS),
         "runtime_signature_count": len(runtime_signatures),
-        "qwen_contract": "official_fla_plus_causal_conv1d",
+        "qwen_contract": QWEN_CONTRACT,
         "rwkv_optimization_lane": rwkv_contract,
         "rwkv_contract": RWKV_CONTRACTS.get(rwkv_contract, "unsupported"),
         "errors": errors,

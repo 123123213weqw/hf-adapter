@@ -63,7 +63,9 @@ def git_commit(root: Path) -> str:
     ).strip()
 
 
-def capture(root: Path) -> tuple[dict[str, Any], str]:
+def capture(
+    root: Path, *, protocol: str = "hf_fast_path_v1"
+) -> tuple[dict[str, Any], str]:
     import torch
 
     freeze = pip_freeze()
@@ -98,7 +100,7 @@ def capture(root: Path) -> tuple[dict[str, Any], str]:
         }
     manifest = {
         "schema_version": 1,
-        "protocol": "hf_fast_path_v1",
+        "protocol": protocol,
         "python_executable": sys.executable,
         "platform": platform.platform(),
         "runtime_lock": runtime_lock,
@@ -125,6 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lock", type=Path)
     parser.add_argument("--write-lock", type=Path)
     parser.add_argument("--require-python", default="3.10")
+    parser.add_argument("--protocol", default="hf_fast_path_v1")
     args = parser.parse_args()
     if args.lock and args.write_lock:
         parser.error("--lock and --write-lock are mutually exclusive")
@@ -133,7 +136,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    manifest, freeze = capture(args.root.resolve())
+    manifest, freeze = capture(args.root.resolve(), protocol=args.protocol)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     args.pip_freeze_output.write_text(freeze, encoding="utf-8")

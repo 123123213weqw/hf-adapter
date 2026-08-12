@@ -1101,6 +1101,80 @@ def test_official_qwen_result_row_enforces_all_six_acceptance_fields() -> None:
         validate_qwen_result_contract(args, invalid)
 
 
+def graph_worker_args(**updates) -> Namespace:
+    values = {
+        "model_kind": "qwen35",
+        "model_role": "reference",
+        "device": "cuda",
+        "dtype": "fp16",
+        "quantization": "none",
+        "qwen_backend": "fla",
+        "qwen_conv_backend": "causal_conv1d",
+        "require_qwen_fast_path": True,
+        "qwen_decode_optimization": "static_cache_inductor_cudagraph",
+        "qwen_graph_probe_tokens": 16,
+        "optimization_lane": "qwen_best_optimized_hf",
+        "batch_size": 1,
+        "prompt_tokens": 128,
+        "decode_tokens": 128,
+        "prefill_chunk_size": 512,
+        "warmup": 3,
+        "runs": 7,
+        "model_pair": "rwkv-0.4b__qwen3.5-0.8b",
+        "probe_output": "",
+        "probe_tokens": 8,
+    }
+    values.update(updates)
+    return Namespace(**values)
+
+
+def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
+    validate_args(graph_worker_args())
+    with pytest.raises(ValueError, match="strict Qwen reference lane"):
+        validate_args(graph_worker_args(optimization_lane=""))
+    with pytest.raises(ValueError, match="strict Qwen reference lane"):
+        validate_args(graph_worker_args(qwen_conv_backend="fla_triton"))
+
+    passing = {
+        "status": "pass",
+        "optimization_lane": "qwen_best_optimized_hf",
+        "qwen_fast_path_available": True,
+        "qwen_fast_path_verified": True,
+        "qwen_full_fused_contract_pass": True,
+        "qwen_causal_conv1d_importable": True,
+        "qwen_conv_backend_effective": "causal_conv1d",
+        "qwen_force_torch": False,
+        "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
+        "qwen_cuda_graph_requested": True,
+        "qwen_cuda_graph_effective": True,
+        "qwen_decode_cuda_graph_verified": True,
+        "qwen_graph_parity_verified": True,
+        "qwen_graph_prefill_next_token_match": True,
+        "qwen_graph_greedy_match": True,
+        "qwen_static_cache_eager_greedy_match": True,
+        "qwen_cache_pointer_stable": True,
+        "qwen_graph_break_count": 0,
+        "qwen_cudagraph_skip_count": 0,
+        "qwen_compile_backend_effective": "inductor",
+        "qwen_compile_mode_effective": "reduce-overhead",
+        "qwen_graph_logits_min_cosine": 0.99999,
+        "step_backend": "qwen_static_cache_inductor_cudagraph",
+        "prefill_backend_effective": "module_call_dynamic_cache",
+        "prefill_cache_type": "DynamicCache",
+        "cache_type": "StaticCache",
+    }
+    args = graph_worker_args()
+    validate_qwen_result_contract(args, passing)
+    with pytest.raises(RuntimeError, match="qwen_decode_cuda_graph_verified=False"):
+        validate_qwen_result_contract(
+            args, {**passing, "qwen_decode_cuda_graph_verified": False}
+        )
+    with pytest.raises(RuntimeError, match="expected >=0.9999"):
+        validate_qwen_result_contract(
+            args, {**passing, "qwen_graph_logits_min_cosine": 0.9998}
+        )
+
+
 class FakeTokenizer:
     def __call__(self, _text: str, **_kwargs):
         return SimpleNamespace(input_ids=torch.tensor([[5, 6, 7]], dtype=torch.long))
@@ -1175,6 +1249,30 @@ def test_worker_chunked_prefill_carries_hf_cache() -> None:
 
     rwkv_args = worker_args(prefill_chunk_size=4)
     assert forward_prefill(rwkv_args, FakeRWKV(), ids) == ((1, 8), 4, 1)
+
+
+def test_worker_chunked_prefill_preserves_supplied_static_cache_identity() -> None:
+    persistent_cache = object()
+    seen: list[object] = []
+
+    class FakeQwen:
+        def __call__(self, ids, *, past_key_values=None, **_kwargs):
+            seen.append(past_key_values)
+            return SimpleNamespace(
+                logits=torch.zeros((ids.shape[0], 1, 4)),
+                past_key_values=past_key_values,
+            )
+
+    args = worker_args(model_kind="qwen35", prefill_chunk_size=3)
+    ids = torch.arange(8).reshape(1, 8)
+    out = forward_prefill(
+        args,
+        FakeQwen(),
+        ids,
+        past_key_values=persistent_cache,
+    )
+    assert seen == [persistent_cache, persistent_cache, persistent_cache]
+    assert out.past_key_values is persistent_cache
 
 
 def test_worker_helpers_validate_and_emit_failure() -> None:

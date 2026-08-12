@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Validate the 48-row Qwen3.5 best-optimized HF reference matrix."""
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+from collections import Counter
+from itertools import product
+from pathlib import Path
+from typing import Any, Iterable
+
+MATRIX = "qwen35_best_optimized_hf_v1"
+LANE = "qwen_best_optimized_hf"
+BATCHES = (1, 8)
+PROMPTS = (128, 512, 2048)
+DECODES = (128, 512)
+EXPECTED_SHAPES = set(product(BATCHES, PROMPTS, DECODES))
+PAIRS = {
+    "rwkv-0.4b__qwen3.5-0.8b": "0.8b",
+    "rwkv-1.5b__qwen3.5-2b": "2b",
+    "rwkv-2.9b__qwen3.5-4b": "4b",
+    "rwkv-7.2b__qwen3.5-9b": "9b",
+}
+PAIR_RANK = {pair: rank for rank, pair in enumerate(PAIRS)}
+RUNTIME_FIELDS = (
+    "torch_version",
+    "torch_cuda_version",
+    "triton_version",
+    "transformers_version",
+    "fla_version",
+    "causal_conv1d_version",
+)
+QWEN_CONTRACT = "official_fla_causal_conv1d_static_cache_inductor_cudagraph"
+
+
+def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in paths:
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            row["_source"] = f"{path}:{line_number}"
+            rows.append(row)
+    return rows
+
+
+def _require(row: dict[str, Any], field: str, expected: Any, errors: list[str]) -> None:
+    if row.get(field) != expected:
+        errors.append(
+            f"{row.get('_source', '<row>')}: {field}={row.get(field)!r}, "
+            f"expected {expected!r}"
+        )
+
+
+def _require_positive(row: dict[str, Any], field: str, errors: list[str]) -> None:
+    value = row.get(field)
+    if not isinstance(value, (int, float)) or value <= 0:
+        errors.append(
+            f"{row.get('_source', '<row>')}: {field}={value!r}, expected > 0"
+        )
+
+
+def _validate_samples(
+    row: dict[str, Any], sample_field: str, median_field: str, errors: list[str]
+) -> None:
+    samples = row.get(sample_field)
+    if not isinstance(samples, list) or len(samples) != 7:
+        errors.append(
+            f"{row.get('_source', '<row>')}: {sample_field} must contain 7 raw samples"
+        )
+        return
+    if not all(isinstance(value, (int, float)) and value > 0 for value in samples):
+        errors.append(
+            f"{row.get('_source', '<row>')}: {sample_field} contains a non-positive sample"
+        )
+        return
+    recorded = row.get(median_field)
+    if not isinstance(recorded, (int, float)) or abs(statistics.median(samples) - recorded) > 1e-6:
+        errors.append(
+            f"{row.get('_source', '<row>')}: {median_field} does not match raw-sample median"
+        )
+    raw_median_field = f"{median_field}_raw"
+    raw_recorded = row.get(raw_median_field)
+    if not isinstance(raw_recorded, (int, float)) or raw_recorded != statistics.median(samples):
+        errors.append(
+            f"{row.get('_source', '<row>')}: {raw_median_field} does not exactly match "
+            "the raw-sample median"
+        )
+
+
+def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) -> None:
+    for field, expected in (
+        ("axis", "qwen35_cross_model_speed"),
+        ("benchmark_matrix", MATRIX),
+        ("optimization_lane", LANE),
+        ("model_role", "reference"),
+        ("model_kind", "qwen35"),
+        ("dtype", "fp16"),
+        ("quantization", "none"),
+        ("prefill_chunk_size", 512),
+        ("warmup", 3),
+        ("runs", 7),
+        ("timing_statistic", "median"),
+        ("mtp_enabled", False),
+        ("speculative_decoding_enabled", False),
+        ("resident_sweep", True),
+        ("status", "pass"),
+        ("qwen_backend_requested", "fla"),
+        ("qwen_conv_backend_requested", "causal_conv1d"),
+        ("qwen_fast_path_required", True),
+        ("qwen_fast_path_available", True),
+        ("qwen_fast_path_verified", True),
+        ("qwen_full_fused_contract_pass", True),
+        ("qwen_causal_conv1d_importable", True),
+        ("qwen_conv_backend_effective", "causal_conv1d"),
+        ("qwen_force_torch", False),
+        ("qwen_decode_optimization_requested", "static_cache_inductor_cudagraph"),
+        ("qwen_decode_optimization_effective", "static_cache_inductor_cudagraph"),
+        ("step_backend", "qwen_static_cache_inductor_cudagraph"),
+        ("prefill_backend_effective", "module_call_dynamic_cache"),
+        ("prefill_cache_type", "DynamicCache"),
+        ("cache_type", "StaticCache"),
+        ("qwen_compile_backend_effective", "inductor"),
+        ("qwen_compile_mode_effective", "reduce-overhead"),
+        ("qwen_compile_fullgraph_effective", False),
+        ("qwen_compile_dynamic_effective", False),
+        ("qwen_cuda_graph_requested", True),
+        ("qwen_cuda_graph_effective", True),
+        ("qwen_decode_cuda_graph_verified", True),
+        ("qwen_graph_break_count", 0),
+        ("qwen_cudagraph_skip_count", 0),
+        ("qwen_cache_pointer_stable", True),
+        ("qwen_graph_parity_verified", True),
+        ("qwen_graph_prefill_next_token_match", True),
+        ("qwen_axis_composition", "independent_best_prefill_and_decode"),
+        ("qwen_graph_greedy_match", True),
+        ("qwen_static_cache_eager_greedy_match", True),
+        ("qwen_graph_logits_greedy_match", True),
+        ("logits_finite", True),
+    ):
+        _require(row, field, expected, errors)
+    if expected_device:
+        _require(row, "device", expected_device, errors)
+
+    pair = str(row.get("model_pair", ""))
+    if pair not in PAIRS:
+        errors.append(f"{row.get('_source', '<row>')}: unexpected model_pair={pair!r}")
+    else:
+        _require(row, "model_size_label", PAIRS[pair], errors)
+    shape = (row.get("batch_size"), row.get("prompt_tokens"), row.get("decode_tokens"))
+    if shape not in EXPECTED_SHAPES:
+        errors.append(f"{row.get('_source', '<row>')}: unexpected B/P/D cell {shape!r}")
+        return
+
+    batch, prompt, decode = (int(value) for value in shape)
+    _require(row, "qwen_graph_max_cache_len", prompt + 3 + decode, errors)
+    _require(row, "qwen_graph_probe_tokens", 3 + decode, errors)
+    _require(row, "qwen_graph_logits_probe_tokens", 16, errors)
+    _require(row, "qwen_graph_distinct_batch_prompts", batch > 1, errors)
+    minimum_cosine = row.get("qwen_graph_logits_min_cosine")
+    if not isinstance(minimum_cosine, (int, float)) or minimum_cosine < 0.9999:
+        errors.append(
+            f"{row.get('_source', '<row>')}: qwen_graph_logits_min_cosine="
+            f"{minimum_cosine!r}, expected >=0.9999"
+        )
+    for field in (
+        "qwen_cudagraph_recorded_non_static_inputs",
+        "qwen_cuda_graph_launch_count",
+        "qwen_cache_tensor_pointer_count",
+        "prefill_tokps_total",
+        "decode_tokps_total",
+        "prefill_tokps_total_raw",
+        "decode_tokps_total_raw",
+        "prefill_sec_median_raw",
+        "decode_sec_median_raw",
+    ):
+        _require_positive(row, field, errors)
+    _validate_samples(row, "prefill_sec_samples", "prefill_sec_median", errors)
+    _validate_samples(row, "decode_sec_samples", "decode_sec_median", errors)
+
+
+def validate_matrix(
+    rows: list[dict[str, Any]], *, expected_device: str = ""
+) -> dict[str, Any]:
+    errors: list[str] = []
+    if len(rows) != 48:
+        errors.append(f"reference row count={len(rows)}, expected 48")
+    for row in rows:
+        _validate_row(row, expected_device, errors)
+
+    expected_keys = {(pair, *shape) for pair in PAIRS for shape in EXPECTED_SHAPES}
+    keys = [
+        (
+            row.get("model_pair"),
+            row.get("batch_size"),
+            row.get("prompt_tokens"),
+            row.get("decode_tokens"),
+        )
+        for row in rows
+    ]
+    counts = Counter(keys)
+    duplicates = sorted(key for key, count in counts.items() if count > 1)
+    missing = sorted(expected_keys - set(keys))
+    extras = sorted(set(keys) - expected_keys)
+    if duplicates:
+        errors.append(f"duplicate cells: {duplicates}")
+    if missing:
+        errors.append(f"missing cells: {missing}")
+    if extras:
+        errors.append(f"extra cells: {extras}")
+
+    runtime_signatures = {
+        tuple(row.get(field) for field in RUNTIME_FIELDS)
+        for row in rows
+        if row.get("status") == "pass"
+    }
+    if len(runtime_signatures) != 1:
+        errors.append(
+            "rows were not produced by one locked runtime signature: "
+            + json.dumps(sorted(runtime_signatures, key=repr), ensure_ascii=False)
+        )
+    devices = sorted({str(row.get("device")) for row in rows})
+    return {
+        "schema_version": 1,
+        "benchmark_matrix": MATRIX,
+        "optimization_lane": LANE,
+        "status": "pass" if not errors else "fail",
+        "reference_rows": len(rows),
+        "expected_rows": 48,
+        "devices": devices,
+        "runtime_fields": list(RUNTIME_FIELDS),
+        "runtime_signature_count": len(runtime_signatures),
+        "qwen_contract": QWEN_CONTRACT,
+        "reference_lane_eligible": not errors,
+        "unified_main_table_eligible": False,
+        "unified_main_table_reason": "RWKV candidate rows were not rerun under this runtime",
+        "errors": errors,
+    }
+
+
+def _clean_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in row.items() if key != "_source"}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reference-results", type=Path, nargs="+", required=True)
+    parser.add_argument("--expected-device", default="")
+    parser.add_argument("--summary", type=Path, required=True)
+    parser.add_argument("--reference-table", type=Path, required=True)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    rows = read_rows(args.reference_results)
+    summary = validate_matrix(rows, expected_device=args.expected_device)
+    args.summary.parent.mkdir(parents=True, exist_ok=True)
+    args.summary.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    if summary["status"] != "pass":
+        print("QWEN35_BEST_OPTIMIZED_HF_V1 " + json.dumps(summary, ensure_ascii=False))
+        return 1
+    ordered = sorted(
+        (_clean_row(row) for row in rows),
+        key=lambda row: (
+            PAIR_RANK[row["model_pair"]],
+            str(row["device"]),
+            int(row["batch_size"]),
+            int(row["prompt_tokens"]),
+            int(row["decode_tokens"]),
+        ),
+    )
+    args.reference_table.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in ordered),
+        encoding="utf-8",
+    )
+    print("QWEN35_BEST_OPTIMIZED_HF_V1 " + json.dumps(summary, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

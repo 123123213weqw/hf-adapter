@@ -3,7 +3,7 @@ from __future__ import annotations
 from itertools import product
 from pathlib import Path
 
-from bench.capture_hf_fast_path_v1_environment import compare_runtime_lock
+from bench.capture_hf_fast_path_v1_environment import capture, compare_runtime_lock
 from bench.validate_hf_fast_path_v1 import PAIRS, validate_matrix
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +71,8 @@ def row(
                 "qwen_causal_conv1d_importable": True,
                 "qwen_conv_backend_effective": "causal_conv1d",
                 "qwen_force_torch": False,
+                "step_backend": "module_call",
+                "cache_type": "DynamicCache",
             }
         )
     return value
@@ -94,6 +96,10 @@ def test_complete_hf_fast_path_v1_matrix_passes() -> None:
     assert summary["candidate_rows"] == 48
     assert summary["reference_rows"] == 48
     assert summary["runtime_signature_count"] == 1
+    assert (
+        summary["qwen_contract"]
+        == "official_fla_plus_causal_conv1d_module_call_dynamic_cache"
+    )
 
 
 def test_qwen_official_contract_failure_blocks_the_main_table() -> None:
@@ -102,6 +108,16 @@ def test_qwen_official_contract_failure_blocks_the_main_table() -> None:
     summary = validate_matrix(complete_rows("candidate"), references)
     assert summary["status"] == "fail"
     assert any("qwen_conv_backend_effective='fla_triton'" in error for error in summary["errors"])
+
+
+def test_qwen_cuda_graph_and_static_cache_block_the_v1_main_table() -> None:
+    references = complete_rows("reference")
+    references[0]["step_backend"] = "qwen_cuda_graph"
+    references[1]["cache_type"] = "StaticCache"
+    summary = validate_matrix(complete_rows("candidate"), references)
+    assert summary["status"] == "fail"
+    assert any("step_backend='qwen_cuda_graph'" in error for error in summary["errors"])
+    assert any("cache_type='StaticCache'" in error for error in summary["errors"])
 
 
 def test_rwkv_cuda_graph_blocks_the_diagnostic_lane_or_missing_cell() -> None:
@@ -160,6 +176,22 @@ def test_runtime_lock_comparison_is_exact() -> None:
     assert compare_runtime_lock(
         {**expected, "torch_version": "2.9.0+cu128"}, expected
     ) == ["torch_version: actual='2.9.0+cu128', expected='2.8.0+cu128'"]
+
+
+def test_environment_capture_accepts_an_explicit_protocol(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "bench.capture_hf_fast_path_v1_environment.pip_freeze", lambda: "torch==test\n"
+    )
+    monkeypatch.setattr(
+        "bench.capture_hf_fast_path_v1_environment.git_commit", lambda _root: "abc123"
+    )
+    monkeypatch.setattr(
+        "bench.capture_hf_fast_path_v1_environment.package_source", lambda _name: None
+    )
+    manifest, _freeze = capture(
+        ROOT, protocol="qwen35_best_optimized_hf_v1"
+    )
+    assert manifest["protocol"] == "qwen35_best_optimized_hf_v1"
 
 
 def test_single_card_script_is_official_and_fail_closed() -> None:
