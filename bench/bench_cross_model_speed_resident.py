@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--require-qwen-fast-path", action="store_true")
     ap.add_argument(
         "--qwen-decode-optimization",
-        choices=["module_call_dynamic", "static_cache_inductor_cudagraph"],
+        choices=["module_call_dynamic", *sorted(speed.QWEN_STATIC_GRAPH_ROUTES)],
         default="module_call_dynamic",
     )
     ap.add_argument("--qwen-graph-probe-tokens", type=int, default=16)

@@ -57,6 +57,7 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "device": device,
             "batch_size": batch,
             "cells": len(group),
+            "decode_route": str(group[0]["qwen_decode_optimization_effective"]),
             "prefill_tokps_median": statistics.median(
                 float(row["prefill_tokps_total"]) for row in group
             ),
@@ -67,11 +68,21 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for (model, device, batch), group in groups.items()
     ]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark_matrix": "qwen35_best_optimized_hf_v1",
         "sort_order": ["model_size", "gpu", "batch", "prompt", "decode"],
         "display_rounding": {">=100": 0, "<100": 1},
         "rows": len(ordered),
+        "decode_routes_by_model": {
+            model: sorted(
+                {
+                    str(row["qwen_decode_optimization_effective"])
+                    for row in ordered
+                    if str(row["model_size_label"]) == model
+                }
+            )
+            for model in sorted({str(row["model_size_label"]) for row in ordered})
+        },
         "model_batch_medians": medians,
         "cells": [
             {
@@ -81,6 +92,11 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "batch_size": row["batch_size"],
                 "prompt_tokens": row["prompt_tokens"],
                 "decode_tokens": row["decode_tokens"],
+                "qwen_decode_optimization_effective": row[
+                    "qwen_decode_optimization_effective"
+                ],
+                "step_backend": row["step_backend"],
+                "cache_type": row["cache_type"],
                 "prefill_tokps_total": row["prefill_tokps_total"],
                 "decode_tokps_total": row["decode_tokps_total"],
                 "prefill_tokps_total_raw": row["prefill_tokps_total_raw"],
@@ -103,12 +119,12 @@ def render_markdown(summary: dict[str, Any]) -> str:
         "",
         "## Model / batch medians",
         "",
-        "| Qwen3.5 | GPU | Batch | Cells | Prefill tok/s | Decode tok/s |",
-        "|---|---|---:|---:|---:|---:|",
+        "| Qwen3.5 | GPU | Batch | Decode route | Cells | Prefill tok/s | Decode tok/s |",
+        "|---|---|---:|---|---:|---:|---:|",
     ]
     for row in summary["model_batch_medians"]:
         lines.append(
-            "| {model_size_label} | {device} | B{batch_size} | {cells} | {prefill} | {decode} |".format(
+            "| {model_size_label} | {device} | B{batch_size} | {decode_route} | {cells} | {prefill} | {decode} |".format(
                 **row,
                 prefill=display_rate(float(row["prefill_tokps_median"])),
                 decode=display_rate(float(row["decode_tokps_median"])),
@@ -119,14 +135,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "",
             "## Complete 48-cell raw matrix",
             "",
-            "| Qwen3.5 | GPU | Batch | Prompt | Decode | Prefill tok/s | Decode tok/s |",
-            "|---|---|---:|---:|---:|---:|---:|",
+            "| Qwen3.5 | GPU | Batch | Prompt | Decode | Route | Prefill tok/s | Decode tok/s |",
+            "|---|---|---:|---:|---:|---|---:|---:|",
         ]
     )
     for row in summary["cells"]:
         lines.append(
             "| {model_size_label} | {device} | B{batch_size} | {prompt_tokens} | "
-            "{decode_tokens} | {prefill} | {decode} |".format(
+            "{decode_tokens} | {qwen_decode_optimization_effective} | {prefill} | {decode} |".format(
                 **row,
                 prefill=display_rate(float(row["prefill_tokps_total"])),
                 decode=display_rate(float(row["decode_tokps_total"])),

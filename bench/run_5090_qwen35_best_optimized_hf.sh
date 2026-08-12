@@ -14,6 +14,7 @@ OPTIMIZATION_LANE="qwen_best_optimized_hf"
 FLA_SOURCE_COMMIT="${FLA_SOURCE_COMMIT:-}"
 CAUSAL_CONV1D_SOURCE_COMMIT="${CAUSAL_CONV1D_SOURCE_COMMIT:-}"
 QWEN_COMPILE_MODE="${QWEN_COMPILE_MODE:-max-autotune}"
+QWEN_DECODE_OPTIMIZATION="${QWEN_DECODE_OPTIMIZATION:-static_cache_inductor_cudagraph}"
 REPOSITORY_COMMIT="${REPOSITORY_COMMIT:-}"
 
 if [[ -z "${OUT_DIR}" || -z "${MODEL}" || -z "${MODEL_PAIR}" || -z "${MODEL_SIZE_LABEL}" ]]; then
@@ -28,7 +29,11 @@ if [[ -z "${FLA_SOURCE_COMMIT}" || -z "${CAUSAL_CONV1D_SOURCE_COMMIT}" || -z "${
   echo "FLA_SOURCE_COMMIT, CAUSAL_CONV1D_SOURCE_COMMIT and REPOSITORY_COMMIT are required" >&2
   exit 2
 fi
-if [[ "${QWEN_COMPILE_MODE}" != "reduce-overhead" && "${QWEN_COMPILE_MODE}" != "max-autotune" ]]; then
+if [[ "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_inductor_cudagraph" && "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_raw_cudagraph" ]]; then
+  echo "QWEN_DECODE_OPTIMIZATION must be a supported StaticCache CUDA Graph route" >&2
+  exit 2
+fi
+if [[ "${QWEN_DECODE_OPTIMIZATION}" == "static_cache_inductor_cudagraph" && "${QWEN_COMPILE_MODE}" != "reduce-overhead" && "${QWEN_COMPILE_MODE}" != "max-autotune" ]]; then
   echo "QWEN_COMPILE_MODE must be reduce-overhead or max-autotune" >&2
   exit 2
 fi
@@ -71,7 +76,7 @@ cd "${ROOT}"
   --qwen-backend fla \
   --qwen-conv-backend causal_conv1d \
   --require-qwen-fast-path \
-  --qwen-decode-optimization static_cache_inductor_cudagraph \
+  --qwen-decode-optimization "${QWEN_DECODE_OPTIMIZATION}" \
   --qwen-compile-mode "${QWEN_COMPILE_MODE}" \
   --qwen-graph-probe-tokens 16 \
   --fail-fast \

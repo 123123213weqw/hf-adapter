@@ -33,9 +33,13 @@ RUNTIME_FIELDS = (
     "causal_conv1d_version",
 )
 QWEN_CONTRACT = (
-    "official_fla_causal_conv1d_static_cache_inductor_cudagraph_tri_oracle"
+    "official_fla_causal_conv1d_static_cache_cudagraph_same_cache_v2"
 )
 QWEN_COMPILE_MODES = {"reduce-overhead", "max-autotune"}
+QWEN_GRAPH_ROUTES = {
+    "static_cache_inductor_cudagraph",
+    "static_cache_raw_cudagraph",
+}
 
 
 def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -66,7 +70,12 @@ def _require(row: dict[str, Any], field: str, expected: Any, errors: list[str]) 
 
 def _require_positive(row: dict[str, Any], field: str, errors: list[str]) -> None:
     value = row.get(field)
-    if not isinstance(value, (int, float)) or value <= 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
         errors.append(
             f"{row.get('_source', '<row>')}: {field}={value!r}, expected > 0"
         )
@@ -81,7 +90,13 @@ def _validate_samples(
             f"{row.get('_source', '<row>')}: {sample_field} must contain 7 raw samples"
         )
         return
-    if not all(isinstance(value, (int, float)) and value > 0 for value in samples):
+    if not all(
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+        and value > 0
+        for value in samples
+    ):
         errors.append(
             f"{row.get('_source', '<row>')}: {sample_field} contains a non-positive sample"
         )
@@ -126,30 +141,23 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("qwen_causal_conv1d_importable", True),
         ("qwen_conv_backend_effective", "causal_conv1d"),
         ("qwen_force_torch", False),
-        ("qwen_decode_optimization_requested", "static_cache_inductor_cudagraph"),
-        ("qwen_decode_optimization_effective", "static_cache_inductor_cudagraph"),
-        ("step_backend", "qwen_static_cache_inductor_cudagraph"),
         ("prefill_backend_effective", "module_call_dynamic_cache"),
         ("prefill_cache_type", "DynamicCache"),
         ("cache_type", "StaticCache"),
-        ("qwen_compile_backend_effective", "inductor"),
-        ("qwen_compile_fullgraph_effective", False),
-        ("qwen_compile_dynamic_effective", False),
-        ("qwen_graph_scope", "single_token_hf_qwen_forward"),
         ("qwen_cuda_graph_requested", True),
         ("qwen_cuda_graph_effective", True),
         ("qwen_decode_cuda_graph_verified", True),
-        ("qwen_graph_break_count", 0),
-        ("qwen_cudagraph_skip_count", 0),
         ("qwen_cache_pointer_stable", True),
         ("qwen_graph_parity_verified", True),
         ("qwen_graph_prefill_next_token_match", True),
         ("qwen_axis_composition", "independent_best_prefill_and_decode"),
         ("qwen_graph_greedy_match", True),
+        ("qwen_same_cache_greedy_match", True),
         ("qwen_static_cache_eager_greedy_match", True),
         ("qwen_graph_logits_greedy_match", True),
         ("qwen_graph_logits_trace_finite", True),
         ("qwen_dynamic_static_logits_finite", True),
+        ("qwen_same_cache_logits_finite", True),
         ("qwen_static_compiled_logits_finite", True),
         ("logits_finite", True),
     ):
@@ -159,23 +167,63 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         errors.append(
             f"{row.get('_source', '<row>')}: benchmark_repository_commit must be non-empty"
         )
-    requested_compile_mode = row.get("qwen_compile_mode_requested")
-    compile_mode = row.get("qwen_compile_mode_effective")
-    if requested_compile_mode not in QWEN_COMPILE_MODES:
+    requested_route = row.get("qwen_decode_optimization_requested")
+    effective_route = row.get("qwen_decode_optimization_effective")
+    if requested_route not in QWEN_GRAPH_ROUTES:
         errors.append(
-            f"{row.get('_source', '<row>')}: qwen_compile_mode_requested="
-            f"{requested_compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+            f"{row.get('_source', '<row>')}: qwen_decode_optimization_requested="
+            f"{requested_route!r}, expected one of {sorted(QWEN_GRAPH_ROUTES)!r}"
         )
-    if compile_mode not in QWEN_COMPILE_MODES:
+    if requested_route != effective_route:
         errors.append(
-            f"{row.get('_source', '<row>')}: qwen_compile_mode_effective="
-            f"{compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+            f"{row.get('_source', '<row>')}: requested/effective decode route mismatch: "
+            f"{requested_route!r} != {effective_route!r}"
         )
-    if requested_compile_mode != compile_mode:
-        errors.append(
-            f"{row.get('_source', '<row>')}: requested/effective compile mode mismatch: "
-            f"{requested_compile_mode!r} != {compile_mode!r}"
+    if effective_route in QWEN_GRAPH_ROUTES:
+        _require(row, "step_backend", f"qwen_{effective_route}", errors)
+    if effective_route == "static_cache_inductor_cudagraph":
+        _require(row, "qwen_compile_backend_effective", "inductor", errors)
+        _require(row, "qwen_compile_fullgraph_effective", False, errors)
+        _require(row, "qwen_compile_dynamic_effective", False, errors)
+        _require(row, "qwen_graph_scope", "single_token_hf_qwen_forward", errors)
+        _require(row, "qwen_graph_break_count", 0, errors)
+        _require(row, "qwen_cudagraph_skip_count", 0, errors)
+        requested_compile_mode = row.get("qwen_compile_mode_requested")
+        compile_mode = row.get("qwen_compile_mode_effective")
+        if requested_compile_mode not in QWEN_COMPILE_MODES:
+            errors.append(
+                f"{row.get('_source', '<row>')}: qwen_compile_mode_requested="
+                f"{requested_compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+            )
+        if compile_mode not in QWEN_COMPILE_MODES:
+            errors.append(
+                f"{row.get('_source', '<row>')}: qwen_compile_mode_effective="
+                f"{compile_mode!r}, expected one of {sorted(QWEN_COMPILE_MODES)!r}"
+            )
+        if requested_compile_mode != compile_mode:
+            errors.append(
+                f"{row.get('_source', '<row>')}: requested/effective compile mode mismatch: "
+                f"{requested_compile_mode!r} != {compile_mode!r}"
+            )
+        _require_positive(row, "qwen_cudagraph_recorded_non_static_inputs", errors)
+    elif effective_route == "static_cache_raw_cudagraph":
+        _require(
+            row,
+            "qwen_graph_scope",
+            "single_token_hf_qwen_forward_argmax_token_copy",
+            errors,
         )
+        for field in (
+            "qwen_compile_mode_requested",
+            "qwen_compile_backend_effective",
+            "qwen_compile_mode_effective",
+            "qwen_compile_fullgraph_effective",
+            "qwen_compile_dynamic_effective",
+            "qwen_graph_break_count",
+            "qwen_cudagraph_skip_count",
+            "qwen_cudagraph_recorded_non_static_inputs",
+        ):
+            _require(row, field, None, errors)
     if expected_device:
         _require(row, "device", expected_device, errors)
 
@@ -197,20 +245,27 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
     for field in (
         "qwen_graph_logits_min_cosine",
         "qwen_dynamic_static_logits_min_cosine",
-        "qwen_static_compiled_logits_min_cosine",
     ):
         minimum_cosine = row.get(field)
         if (
             not isinstance(minimum_cosine, (int, float))
             or not math.isfinite(minimum_cosine)
-            or minimum_cosine < 0.9999
         ):
             errors.append(
                 f"{row.get('_source', '<row>')}: {field}="
-                f"{minimum_cosine!r}, expected >=0.9999"
+                f"{minimum_cosine!r}, expected finite cross-cache telemetry"
             )
+    same_cache_cosine = row.get("qwen_same_cache_logits_min_cosine")
+    if (
+        not isinstance(same_cache_cosine, (int, float))
+        or not math.isfinite(same_cache_cosine)
+        or same_cache_cosine < 0.9999
+    ):
+        errors.append(
+            f"{row.get('_source', '<row>')}: qwen_same_cache_logits_min_cosine="
+            f"{same_cache_cosine!r}, expected >=0.9999"
+        )
     for field in (
-        "qwen_cudagraph_recorded_non_static_inputs",
         "qwen_cuda_graph_launch_count",
         "qwen_cache_tensor_pointer_count",
         "prefill_tokps_total",
@@ -297,23 +352,39 @@ def validate_matrix(
             "rows were not produced by one locked runtime signature: "
             + json.dumps(sorted(runtime_signatures, key=repr), ensure_ascii=False)
         )
-    compile_modes_by_model: dict[str, list[str]] = {}
+    compile_modes_by_model: dict[str, list[str] | None] = {}
+    decode_routes_by_model: dict[str, list[str]] = {}
     for pair in PAIRS:
-        modes = sorted(
+        routes = sorted(
             {
-                str(row.get("qwen_compile_mode_effective"))
+                str(row.get("qwen_decode_optimization_effective"))
                 for row in rows
                 if row.get("model_pair") == pair
             }
         )
-        compile_modes_by_model[PAIRS[pair]] = modes
-        if len(modes) != 1:
+        decode_routes_by_model[PAIRS[pair]] = routes
+        if len(routes) != 1:
             errors.append(
-                f"model pair {pair} mixed compile modes across its 12 cells: {modes}"
+                f"model pair {pair} mixed decode routes across its 12 cells: {routes}"
             )
+        if routes == ["static_cache_inductor_cudagraph"]:
+            modes = sorted(
+                {
+                    str(row.get("qwen_compile_mode_effective"))
+                    for row in rows
+                    if row.get("model_pair") == pair
+                }
+            )
+            compile_modes_by_model[PAIRS[pair]] = modes
+            if len(modes) != 1:
+                errors.append(
+                    f"model pair {pair} mixed compile modes across its 12 cells: {modes}"
+                )
+        else:
+            compile_modes_by_model[PAIRS[pair]] = None
     devices = sorted({str(row.get("device")) for row in rows})
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark_matrix": MATRIX,
         "optimization_lane": LANE,
         "status": "pass" if not errors else "fail",
@@ -324,6 +395,7 @@ def validate_matrix(
         "runtime_signature_count": len(runtime_signatures),
         "benchmark_repository_commits": repository_commits,
         "compile_modes_by_model": compile_modes_by_model,
+        "decode_routes_by_model": decode_routes_by_model,
         "qwen_contract": QWEN_CONTRACT,
         "reference_lane_eligible": not errors,
         "unified_main_table_eligible": False,

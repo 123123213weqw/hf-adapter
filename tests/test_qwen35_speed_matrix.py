@@ -436,6 +436,119 @@ def test_comparator_passes_complete_matrix(tmp_path: Path) -> None:
     assert "Overall: PASS" in (tmp_path / "summary.md").read_text(encoding="utf-8")
 
 
+def test_comparator_rejects_duplicate_role_cell_without_overwrite(tmp_path: Path) -> None:
+    first_candidate = row("candidate", prompt=128, prefill=120.0, decode=220.0)
+    duplicate_candidate = row("candidate", prompt=128, prefill=999.0, decode=999.0)
+    reference = row("reference", prompt=128, prefill=100.0, decode=200.0)
+
+    proc = run_compare(
+        tmp_path,
+        [first_candidate, duplicate_candidate, reference],
+        "--expected-cells",
+        "1",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["coverage"]["complete"] is False
+    assert summary["gates"]["duplicate_free_pass"] is False
+    assert summary["gates"]["overall_pass"] is False
+    assert summary["duplicates"] == [
+        {
+            "role": "candidate",
+            "model_pair": "rwkv-1.5b__qwen3.5-2b",
+            "prompt_tokens": 128,
+            "decode_tokens": 128,
+            "batch_size": 1,
+            "dtype": "fp16",
+            "quantization": "none",
+            "first_lineno": 1,
+            "duplicate_lineno": 2,
+        }
+    ]
+    assert summary["cells"][0]["candidate_decode_tokps_total"] == 220.0
+
+
+@pytest.mark.parametrize(
+    "route",
+    ["static_cache_inductor_cudagraph", "static_cache_raw_cudagraph"],
+)
+def test_comparator_gates_and_reports_exact_reference_decode_routes(
+    tmp_path: Path, route: str
+) -> None:
+    reference = row("reference", prompt=128, prefill=100.0, decode=200.0)
+    reference.update(
+        {
+            "model_size_label": "2b",
+            "qwen_decode_optimization_effective": route,
+            "step_backend": f"qwen_{route}",
+            "cache_type": "StaticCache",
+            "qwen_axis_composition": "independent_best_prefill_and_decode",
+        }
+    )
+
+    proc = run_compare(
+        tmp_path,
+        [row("candidate", prompt=128, prefill=120.0, decode=220.0), reference],
+        "--expected-cells",
+        "1",
+        "--required-reference-decode-route",
+        route,
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["reference_decode_route"] == {
+        "required": route,
+        "matching_cells": 1,
+        "total_cells": 1,
+        "complete": True,
+    }
+    assert summary["routes_by_model"] == {"2b": [route]}
+    cell = summary["cells"][0]
+    assert cell["reference_decode_route"] == route
+    assert cell["reference_step_backend"] == f"qwen_{route}"
+    assert cell["reference_cache_type"] == "StaticCache"
+    assert cell["reference_axis_composition"] == "independent_best_prefill_and_decode"
+    assert cell["reference_decode_route_pass"] is True
+
+    family_dir = tmp_path / "family"
+    family_dir.mkdir()
+    family_proc = run_compare(
+        family_dir,
+        [row("candidate", prompt=128, prefill=120.0, decode=220.0), reference],
+        "--expected-cells",
+        "1",
+        "--required-reference-decode-route",
+        "static_cache_cudagraph",
+        "--fail-on-gate",
+    )
+    assert family_proc.returncode == 0, family_proc.stdout + family_proc.stderr
+
+
+def test_comparator_static_cache_cudagraph_family_is_fail_closed(tmp_path: Path) -> None:
+    reference = row("reference", prompt=128, prefill=100.0, decode=200.0)
+    reference["qwen_decode_optimization_effective"] = "module_call_dynamic"
+
+    proc = run_compare(
+        tmp_path,
+        [row("candidate", prompt=128, prefill=120.0, decode=220.0), reference],
+        "--expected-cells",
+        "1",
+        "--required-reference-decode-route",
+        "static_cache_cudagraph",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["reference_decode_route"]["matching_cells"] == 0
+    assert summary["gates"]["reference_decode_route_pass"] is False
+    assert summary["red_cells"][0]["reference_decode_route_pass"] is False
+
+
 def test_comparator_strict_backend_and_quant_memory_gates(tmp_path: Path) -> None:
     rows = [
         row("candidate", prompt=128, prefill=120.0, decode=220.0, footprint=200.0),
@@ -1186,18 +1299,23 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         "qwen_graph_parity_verified": True,
         "qwen_graph_prefill_next_token_match": True,
         "qwen_graph_greedy_match": True,
+        "qwen_same_cache_greedy_match": True,
         "qwen_static_cache_eager_greedy_match": True,
         "qwen_graph_logits_trace_finite": True,
         "qwen_dynamic_static_logits_finite": True,
         "qwen_static_compiled_logits_finite": True,
+        "qwen_same_cache_logits_finite": True,
         "qwen_cache_pointer_stable": True,
         "qwen_graph_break_count": 0,
         "qwen_cudagraph_skip_count": 0,
         "qwen_compile_backend_effective": "inductor",
         "qwen_compile_mode_effective": "max-autotune",
+        "qwen_graph_scope": "single_token_hf_qwen_forward",
+        "qwen_cuda_graph_launch_count": 1,
         "qwen_graph_logits_min_cosine": 0.99999,
         "qwen_dynamic_static_logits_min_cosine": 0.99999,
         "qwen_static_compiled_logits_min_cosine": 0.99999,
+        "qwen_same_cache_logits_min_cosine": 0.99999,
         "step_backend": "qwen_static_cache_inductor_cudagraph",
         "prefill_backend_effective": "module_call_dynamic_cache",
         "prefill_cache_type": "DynamicCache",
@@ -1205,6 +1323,28 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     }
     args = graph_worker_args()
     validate_qwen_result_contract(args, passing)
+    raw_args = graph_worker_args(
+        qwen_decode_optimization="static_cache_raw_cudagraph"
+    )
+    validate_args(raw_args)
+    raw_passing = {
+        **passing,
+        "qwen_decode_optimization_effective": "static_cache_raw_cudagraph",
+        "step_backend": "qwen_static_cache_raw_cudagraph",
+        "qwen_graph_scope": "single_token_hf_qwen_forward_argmax_token_copy",
+        "qwen_graph_break_count": None,
+        "qwen_cudagraph_skip_count": None,
+        "qwen_cudagraph_recorded_non_static_inputs": None,
+        "qwen_compile_backend_effective": None,
+        "qwen_compile_mode_effective": None,
+        "qwen_compile_fullgraph_effective": None,
+        "qwen_compile_dynamic_effective": None,
+    }
+    validate_qwen_result_contract(raw_args, raw_passing)
+    with pytest.raises(RuntimeError, match="qwen_compile_backend_effective"):
+        validate_qwen_result_contract(
+            raw_args, {**raw_passing, "qwen_compile_backend_effective": "inductor"}
+        )
     reduce_args = graph_worker_args(qwen_compile_mode="reduce-overhead")
     validate_qwen_result_contract(
         reduce_args,
@@ -1213,7 +1353,7 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     for field in (
         "qwen_graph_logits_trace_finite",
         "qwen_dynamic_static_logits_finite",
-        "qwen_static_compiled_logits_finite",
+        "qwen_same_cache_logits_finite",
     ):
         for invalid in (False, 1, None):
             with pytest.raises(RuntimeError, match=field):
@@ -1222,18 +1362,20 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         validate_qwen_result_contract(
             args, {**passing, "qwen_decode_cuda_graph_verified": False}
         )
-    with pytest.raises(RuntimeError, match="expected >=0.9999"):
+    validate_qwen_result_contract(
+        args, {**passing, "qwen_graph_logits_min_cosine": 0.99}
+    )
+    validate_qwen_result_contract(
+        args, {**passing, "qwen_dynamic_static_logits_min_cosine": 0.99}
+    )
+    with pytest.raises(RuntimeError, match="qwen_same_cache_logits_min_cosine"):
         validate_qwen_result_contract(
-            args, {**passing, "qwen_graph_logits_min_cosine": 0.9998}
+            args, {**passing, "qwen_same_cache_logits_min_cosine": 0.9998}
         )
-    with pytest.raises(RuntimeError, match="qwen_static_compiled_logits_min_cosine"):
-        validate_qwen_result_contract(
-            args, {**passing, "qwen_static_compiled_logits_min_cosine": 0.9998}
-        )
-    with pytest.raises(RuntimeError, match="qwen_static_compiled_logits_min_cosine"):
+    with pytest.raises(RuntimeError, match="qwen_same_cache_logits_min_cosine"):
         validate_qwen_result_contract(
             args,
-            {**passing, "qwen_static_compiled_logits_min_cosine": float("nan")},
+            {**passing, "qwen_same_cache_logits_min_cosine": float("nan")},
         )
 
 

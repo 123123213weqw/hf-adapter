@@ -76,14 +76,17 @@ def row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "qwen_graph_prefill_next_token_match": True,
         "qwen_axis_composition": "independent_best_prefill_and_decode",
         "qwen_graph_greedy_match": True,
+        "qwen_same_cache_greedy_match": True,
         "qwen_static_cache_eager_greedy_match": True,
         "qwen_graph_logits_greedy_match": True,
         "qwen_graph_logits_trace_finite": True,
         "qwen_dynamic_static_logits_finite": True,
+        "qwen_same_cache_logits_finite": True,
         "qwen_static_compiled_logits_finite": True,
         "qwen_graph_logits_min_cosine": 0.99999,
         "qwen_dynamic_static_logits_min_cosine": 0.99999,
         "qwen_static_compiled_logits_min_cosine": 0.99999,
+        "qwen_same_cache_logits_min_cosine": 0.99999,
         "qwen_graph_max_cache_len": prompt + 3 + decode,
         "qwen_graph_probe_tokens": 3 + decode,
         "qwen_graph_logits_probe_tokens": 16,
@@ -111,6 +114,25 @@ def complete_rows() -> list[dict]:
     ]
 
 
+def use_raw_graph(item: dict) -> None:
+    item.update(
+        {
+            "qwen_decode_optimization_requested": "static_cache_raw_cudagraph",
+            "qwen_decode_optimization_effective": "static_cache_raw_cudagraph",
+            "step_backend": "qwen_static_cache_raw_cudagraph",
+            "qwen_compile_mode_requested": None,
+            "qwen_compile_backend_effective": None,
+            "qwen_compile_mode_effective": None,
+            "qwen_compile_fullgraph_effective": None,
+            "qwen_compile_dynamic_effective": None,
+            "qwen_graph_scope": "single_token_hf_qwen_forward_argmax_token_copy",
+            "qwen_graph_break_count": None,
+            "qwen_cudagraph_skip_count": None,
+            "qwen_cudagraph_recorded_non_static_inputs": None,
+        }
+    )
+
+
 def test_complete_best_optimized_qwen_matrix_passes() -> None:
     summary = validate_matrix(
         complete_rows(), expected_device="NVIDIA GeForce RTX 5090"
@@ -129,6 +151,36 @@ def test_reduce_overhead_rows_are_valid_when_all_graph_gates_pass() -> None:
             item["qwen_compile_mode_effective"] = "reduce-overhead"
     summary = validate_matrix(rows, expected_device="NVIDIA GeForce RTX 5090")
     assert summary["status"] == "pass"
+
+
+def test_models_may_choose_one_consistent_graph_route_each() -> None:
+    rows = complete_rows()
+    for item in rows:
+        if item["model_size_label"] in {"4b", "9b"}:
+            use_raw_graph(item)
+    summary = validate_matrix(rows, expected_device="NVIDIA GeForce RTX 5090")
+    assert summary["status"] == "pass"
+    assert summary["decode_routes_by_model"]["4b"] == [
+        "static_cache_raw_cudagraph"
+    ]
+    assert summary["compile_modes_by_model"]["4b"] is None
+
+    use_raw_graph(rows[0])
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("mixed decode routes" in error for error in summary["errors"])
+
+
+def test_cross_cache_cosine_is_informational_but_same_cache_is_strict() -> None:
+    rows = complete_rows()
+    rows[0]["qwen_graph_logits_min_cosine"] = 0.99
+    rows[0]["qwen_dynamic_static_logits_min_cosine"] = 0.99
+    assert validate_matrix(rows)["status"] == "pass"
+
+    rows[0]["qwen_same_cache_logits_min_cosine"] = 0.9998
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("qwen_same_cache_logits_min_cosine" in error for error in summary["errors"])
 
 
 def test_one_model_cannot_mix_compile_modes_across_cells() -> None:
@@ -156,7 +208,7 @@ def test_rows_must_record_one_benchmark_repository_commit() -> None:
 
 def test_non_finite_cosine_and_requested_mode_mismatch_fail() -> None:
     rows = complete_rows()
-    rows[0]["qwen_static_compiled_logits_min_cosine"] = float("nan")
+    rows[0]["qwen_same_cache_logits_min_cosine"] = float("nan")
     rows[1]["qwen_compile_mode_requested"] = "reduce-overhead"
     summary = validate_matrix(rows)
     assert summary["status"] == "fail"
@@ -178,7 +230,7 @@ def test_graph_fallback_or_missing_cell_fails() -> None:
     (
         "qwen_graph_logits_trace_finite",
         "qwen_dynamic_static_logits_finite",
-        "qwen_static_compiled_logits_finite",
+        "qwen_same_cache_logits_finite",
     ),
 )
 def test_trace_finite_gates_require_real_booleans(field: str) -> None:

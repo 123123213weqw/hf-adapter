@@ -56,6 +56,10 @@ import torch  # noqa: E402
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 DTYPES = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
+QWEN_STATIC_GRAPH_ROUTES = {
+    "static_cache_inductor_cudagraph",
+    "static_cache_raw_cudagraph",
+}
 PROMPT_SEED = (
     "RWKV and Qwen are language models evaluated with identical tensor shapes. "
     "This sentence is repeated only to build deterministic benchmark tokens. "
@@ -110,20 +114,21 @@ def validate_args(args: argparse.Namespace) -> None:
     )
     if qwen_decode_optimization not in {
         "module_call_dynamic",
-        "static_cache_inductor_cudagraph",
+        *QWEN_STATIC_GRAPH_ROUTES,
     }:
         raise ValueError(
             "--qwen-decode-optimization must be module_call_dynamic or "
-            "static_cache_inductor_cudagraph"
+            "static_cache_inductor_cudagraph, or static_cache_raw_cudagraph"
         )
-    if qwen_decode_optimization == "static_cache_inductor_cudagraph":
-        qwen_compile_mode = str(
-            getattr(args, "qwen_compile_mode", "max-autotune")
-        )
-        if qwen_compile_mode not in {"reduce-overhead", "max-autotune"}:
-            raise ValueError(
-                "--qwen-compile-mode must be reduce-overhead or max-autotune"
+    if qwen_decode_optimization in QWEN_STATIC_GRAPH_ROUTES:
+        if qwen_decode_optimization == "static_cache_inductor_cudagraph":
+            qwen_compile_mode = str(
+                getattr(args, "qwen_compile_mode", "max-autotune")
             )
+            if qwen_compile_mode not in {"reduce-overhead", "max-autotune"}:
+                raise ValueError(
+                    "--qwen-compile-mode must be reduce-overhead or max-autotune"
+                )
         graph_requirements = {
             "model_kind": (args.model_kind, "qwen35"),
             "model_role": (args.model_role, "reference"),
@@ -148,7 +153,7 @@ def validate_args(args: argparse.Namespace) -> None:
         ]
         if mismatches:
             raise ValueError(
-                "static_cache_inductor_cudagraph is a strict Qwen reference lane: "
+                f"{qwen_decode_optimization} is a strict Qwen reference lane: "
                 + "; ".join(mismatches)
             )
         if int(getattr(args, "qwen_graph_probe_tokens", 16)) <= 0:
@@ -199,8 +204,11 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
         "qwen_decode_optimization_requested": str(
             getattr(args, "qwen_decode_optimization", "module_call_dynamic")
         ),
-        "qwen_compile_mode_requested": str(
-            getattr(args, "qwen_compile_mode", "max-autotune")
+        "qwen_compile_mode_requested": (
+            str(getattr(args, "qwen_compile_mode", "max-autotune"))
+            if str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
+            == "static_cache_inductor_cudagraph"
+            else None
         ),
         "qwen_graph_logits_probe_tokens_requested": int(
             getattr(args, "qwen_graph_probe_tokens", 16)
@@ -999,6 +1007,28 @@ class QwenStaticCacheInductorCudaGraphDecode:
             )
         return torch.cat(tokens, dim=1)
 
+    def candidate_greedy_tokens(self, ids, steps: int) -> torch.Tensor:
+        return self.compiled_greedy_tokens(ids, steps)
+
+    def candidate_logits_trace(self, ids, steps: int) -> list[torch.Tensor]:
+        with torch.inference_mode():
+            out = self.prefill(ids)
+            token = out.logits[:, -1:].argmax(dim=-1)
+            logits = [out.logits[:, -1].detach().cpu()]
+            del out
+            for _ in range(steps):
+                out = self.compiled_step(token)
+                token = out.logits[:, -1:].argmax(dim=-1)
+                logits.append(out.logits[:, -1].detach().cpu())
+                del out
+        expected = int(ids.shape[1]) + steps
+        actual = _cache_sequence_length(self.cache)
+        if actual != expected:
+            raise RuntimeError(
+                f"compiled StaticCache length mismatch: got {actual}, expected {expected}"
+            )
+        return logits
+
     def timed(self) -> float:
         with torch.inference_mode():
             out = self.prefill(self.ids)
@@ -1031,6 +1061,208 @@ class QwenStaticCacheInductorCudaGraphDecode:
     def cleanup(self) -> None:
         self.compiled = None
         _clear_qwen_compile_state(self.model)
+
+
+class QwenStaticCacheRawCudaGraphDecode:
+    """Capture one exact eager Qwen decode step as a raw CUDA Graph."""
+
+    graph_scope = "single_token_hf_qwen_forward_argmax_token_copy"
+    compile_backend = None
+    compile_mode = None
+    compile_fullgraph = None
+    compile_dynamic = None
+    graph_break_count = None
+    cudagraph_skip_count = None
+    cudagraph_recorded_non_static_inputs = None
+    capture_warmup_steps = 3
+
+    def __init__(self, args: argparse.Namespace, model, ids) -> None:
+        if not str(args.device).startswith("cuda") or not torch.cuda.is_available():
+            raise RuntimeError("static_cache_raw_cudagraph requires a live CUDA device")
+        try:
+            from transformers import StaticCache
+        except ImportError as exc:
+            raise RuntimeError("installed Transformers does not provide StaticCache") from exc
+
+        self.args = args
+        self.model = model
+        self.ids = ids
+        self.max_cache_len = (
+            int(args.prompt_tokens) + int(args.warmup) + int(args.decode_tokens)
+        )
+        setup_started = time.perf_counter()
+        self.cache = StaticCache(config=model.config, max_cache_len=self.max_cache_len)
+        self.static_token = torch.empty(
+            (int(args.batch_size), 1), dtype=torch.long, device=ids.device
+        )
+        first = self.prefill(ids)
+        self.static_token.copy_(first.logits[:, -1:].argmax(dim=-1))
+        del first
+        initial_cache_signature = _cache_tensor_pointer_signature(self.cache)
+        if not initial_cache_signature:
+            raise RuntimeError("StaticCache did not initialize persistent tensors")
+        self.cache_pointer_signature = initial_cache_signature
+        self.static_token_pointer = int(self.static_token.data_ptr())
+
+        self.capture_stream = torch.cuda.Stream(device=ids.device)
+        current = torch.cuda.current_stream(device=ids.device)
+        self.capture_stream.wait_stream(current)
+        with torch.cuda.stream(self.capture_stream), torch.inference_mode():
+            for _ in range(self.capture_warmup_steps):
+                out = model(
+                    self.static_token,
+                    past_key_values=self.cache,
+                    use_cache=True,
+                    logits_to_keep=1,
+                    return_dict=True,
+                )
+                self.static_token.copy_(out.logits[:, -1:].argmax(dim=-1))
+                del out
+        current.wait_stream(self.capture_stream)
+
+        first = self.prefill(ids)
+        self.static_token.copy_(first.logits[:, -1:].argmax(dim=-1))
+        del first
+        self.graph = torch.cuda.CUDAGraph()
+        capture_started = time.perf_counter()
+        self.capture_stream.wait_stream(current)
+        with torch.inference_mode(), torch.cuda.graph(
+            self.graph, stream=self.capture_stream, capture_error_mode="global"
+        ):
+            captured = model(
+                self.static_token,
+                past_key_values=self.cache,
+                use_cache=True,
+                logits_to_keep=1,
+                return_dict=True,
+            )
+            self.static_logits = captured.logits[:, -1]
+            self.static_token.copy_(self.static_logits.argmax(dim=-1, keepdim=True))
+        current.wait_stream(self.capture_stream)
+        cuda_sync(args.device)
+        self.capture_s = time.perf_counter() - capture_started
+        self.static_logits_pointer = int(self.static_logits.data_ptr())
+
+        first = self.prefill(ids)
+        self.static_token.copy_(first.logits[:, -1:].argmax(dim=-1))
+        del first
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profile:
+            with torch.inference_mode():
+                self.graph.replay()
+            cuda_sync(args.device)
+        self.cuda_graph_launch_count = sum(
+            int(event.count)
+            for event in profile.key_averages()
+            if str(event.key) == "cudaGraphLaunch"
+        )
+        self.cuda_graph_verified = self.cuda_graph_launch_count == 1
+        if not self.cuda_graph_verified:
+            raise RuntimeError(
+                "raw CUDA Graph profiler expected exactly one cudaGraphLaunch, got "
+                f"{self.cuda_graph_launch_count}"
+            )
+        self._refresh_pointer_gate()
+        self.setup_s = time.perf_counter() - setup_started
+
+    def _refresh_pointer_gate(self) -> None:
+        self.cache_pointer_stable = (
+            _cache_tensor_pointer_signature(self.cache) == self.cache_pointer_signature
+            and int(self.static_token.data_ptr()) == self.static_token_pointer
+            and int(self.static_logits.data_ptr()) == self.static_logits_pointer
+        )
+        self.cache_tensor_pointer_count = len(self.cache_pointer_signature)
+        if not self.cache_pointer_stable:
+            raise RuntimeError("raw CUDA Graph static tensor pointers changed")
+
+    def prefill(self, ids):
+        with torch.inference_mode():
+            self.cache.reset()
+            if _cache_sequence_length(self.cache) != 0:
+                raise RuntimeError("StaticCache reset did not restore length zero")
+            out = forward_prefill(
+                self.args, self.model, ids, past_key_values=self.cache
+            )
+        if out.past_key_values is not self.cache:
+            raise RuntimeError("chunked StaticCache prefill replaced the cache object")
+        actual = _cache_sequence_length(self.cache)
+        if actual != int(ids.shape[1]):
+            raise RuntimeError(
+                f"StaticCache prefill length mismatch: {actual} != {ids.shape[1]}"
+            )
+        return out
+
+    def candidate_step(self, token):
+        self.static_token.copy_(token)
+        self.graph.replay()
+        return self.static_logits
+
+    def candidate_greedy_tokens(self, ids, steps: int) -> torch.Tensor:
+        with torch.inference_mode():
+            out = self.prefill(ids)
+            self.static_token.copy_(out.logits[:, -1:].argmax(dim=-1))
+            tokens = [self.static_token.detach().cpu()]
+            del out
+            for _ in range(steps):
+                self.graph.replay()
+                tokens.append(self.static_token.detach().cpu())
+        actual = _cache_sequence_length(self.cache)
+        expected = int(ids.shape[1]) + steps
+        if actual != expected:
+            raise RuntimeError(f"raw graph cache length mismatch: {actual} != {expected}")
+        self._refresh_pointer_gate()
+        return torch.cat(tokens, dim=1)
+
+    def candidate_logits_trace(self, ids, steps: int) -> list[torch.Tensor]:
+        with torch.inference_mode():
+            out = self.prefill(ids)
+            self.static_token.copy_(out.logits[:, -1:].argmax(dim=-1))
+            logits = [out.logits[:, -1].detach().cpu()]
+            del out
+            for _ in range(steps):
+                self.graph.replay()
+                logits.append(self.static_logits.detach().cpu())
+        actual = _cache_sequence_length(self.cache)
+        expected = int(ids.shape[1]) + steps
+        if actual != expected:
+            raise RuntimeError(f"raw graph cache length mismatch: {actual} != {expected}")
+        self._refresh_pointer_gate()
+        return logits
+
+    def timed(self) -> float:
+        with torch.inference_mode():
+            out = self.prefill(self.ids)
+            self.static_token.copy_(out.logits[:, -1:].argmax(dim=-1))
+            del out
+            for _ in range(int(self.args.warmup)):
+                self.graph.replay()
+            cuda_sync(self.args.device)
+            started = time.perf_counter()
+            for _ in range(int(self.args.decode_tokens)):
+                self.graph.replay()
+            cuda_sync(self.args.device)
+            elapsed = time.perf_counter() - started
+        expected = self.max_cache_len
+        actual = _cache_sequence_length(self.cache)
+        if actual != expected:
+            raise RuntimeError(f"timed raw graph cache length mismatch: {actual} != {expected}")
+        self._refresh_pointer_gate()
+        return elapsed
+
+    def cleanup(self) -> None:
+        cuda_sync(self.args.device)
+        graph = getattr(self, "graph", None)
+        if graph is not None:
+            graph.reset()
+        self.static_logits = None
+        self.static_token = None
+        self.graph = None
+        self.cache = None
+        self.capture_stream = None
 
 
 def _minimum_cosine(left: torch.Tensor, right: torch.Tensor) -> float:
@@ -1109,24 +1341,14 @@ def _eager_logits_trace(
     return logits
 
 
-def _compiled_logits_trace(
-    runner: QwenStaticCacheInductorCudaGraphDecode,
+def _candidate_logits_trace(
+    runner,
     ids,
     steps: int,
 ) -> list[torch.Tensor]:
-    """Collect the corresponding untimed compiled StaticCache logits trace."""
+    """Collect the candidate StaticCache graph logits trace."""
 
-    with torch.inference_mode():
-        out = runner.prefill(ids)
-        token = out.logits[:, -1:].argmax(dim=-1)
-        logits = [out.logits[:, -1].detach().cpu()]
-        del out
-        for _ in range(steps):
-            out = runner.compiled_step(token)
-            token = out.logits[:, -1:].argmax(dim=-1)
-            logits.append(out.logits[:, -1].detach().cpu())
-            del out
-    return logits
+    return runner.candidate_logits_trace(ids, steps)
 
 
 def _logits_trace_metrics(
@@ -1177,7 +1399,7 @@ def verify_qwen_cuda_graph_parity(
     args: argparse.Namespace,
     model,
     ids,
-    runner: QwenStaticCacheInductorCudaGraphDecode,
+    runner,
 ) -> dict[str, Any]:
     """Gate the full decode horizon and a logits probe against eager HF."""
 
@@ -1191,11 +1413,14 @@ def verify_qwen_cuda_graph_parity(
         parity_steps,
         cache=runner.cache,
     )
-    compiled_tokens = runner.compiled_greedy_tokens(probe_ids, parity_steps)
+    candidate_tokens = runner.candidate_greedy_tokens(probe_ids, parity_steps)
     static_eager_match = bool(torch.equal(eager_tokens, static_eager_tokens))
-    greedy_match = bool(torch.equal(eager_tokens, compiled_tokens))
+    greedy_match = bool(torch.equal(eager_tokens, candidate_tokens))
+    same_cache_greedy_match = bool(
+        torch.equal(static_eager_tokens, candidate_tokens)
+    )
     prefill_next_token_match = bool(
-        torch.equal(eager_tokens[:, :1], compiled_tokens[:, :1])
+        torch.equal(eager_tokens[:, :1], candidate_tokens[:, :1])
     )
     logits_probe_tokens = min(
         int(getattr(args, "qwen_graph_probe_tokens", 16)), parity_steps
@@ -1210,37 +1435,40 @@ def verify_qwen_cuda_graph_parity(
         logits_probe_tokens,
         cache=runner.cache,
     )
-    compiled_logits = _compiled_logits_trace(
+    candidate_logits = _candidate_logits_trace(
         runner, probe_ids, logits_probe_tokens
     )
-    dynamic_compiled = _logits_trace_metrics(dynamic_logits, compiled_logits)
+    dynamic_candidate = _logits_trace_metrics(dynamic_logits, candidate_logits)
     dynamic_static = _logits_trace_metrics(dynamic_logits, static_logits)
-    static_compiled = _logits_trace_metrics(static_logits, compiled_logits)
-    minimum_cosine = dynamic_compiled["min_cosine"]
-    max_abs_diff = dynamic_compiled["max_abs_diff"]
-    cosine_pass = all(
-        bool(metrics["finite"])
-        and isinstance(metrics["min_cosine"], (int, float))
-        and float(metrics["min_cosine"]) >= 0.9999
-        for metrics in (dynamic_compiled, dynamic_static, static_compiled)
+    same_cache = _logits_trace_metrics(static_logits, candidate_logits)
+    minimum_cosine = dynamic_candidate["min_cosine"]
+    max_abs_diff = dynamic_candidate["max_abs_diff"]
+    same_cache_cosine_pass = (
+        bool(same_cache["finite"])
+        and isinstance(same_cache["min_cosine"], (int, float))
+        and float(same_cache["min_cosine"]) >= 0.9999
     )
-    logits_greedy_match = bool(dynamic_compiled["greedy_match"])
+    logits_greedy_match = bool(dynamic_candidate["greedy_match"])
     verified = (
         runner.cuda_graph_verified
         and runner.cache_pointer_stable
         and prefill_next_token_match
         and static_eager_match
         and greedy_match
+        and same_cache_greedy_match
         and logits_greedy_match
-        and bool(dynamic_compiled["finite"])
+        and bool(dynamic_static["greedy_match"])
+        and bool(same_cache["greedy_match"])
+        and bool(dynamic_candidate["finite"])
         and bool(dynamic_static["finite"])
-        and bool(static_compiled["finite"])
-        and cosine_pass
+        and bool(same_cache["finite"])
+        and same_cache_cosine_pass
     )
     return {
         "qwen_graph_parity_verified": verified,
         "qwen_graph_prefill_next_token_match": prefill_next_token_match,
         "qwen_graph_greedy_match": greedy_match,
+        "qwen_same_cache_greedy_match": same_cache_greedy_match,
         "qwen_static_cache_eager_greedy_match": static_eager_match,
         "qwen_graph_logits_greedy_match": logits_greedy_match,
         "qwen_graph_probe_tokens": parity_steps,
@@ -1248,19 +1476,24 @@ def verify_qwen_cuda_graph_parity(
         "qwen_graph_distinct_batch_prompts": int(ids.shape[0]) > 1,
         "qwen_graph_logits_min_cosine": minimum_cosine,
         "qwen_graph_logits_max_abs_diff": max_abs_diff,
-        "qwen_graph_logits_trace_finite": bool(dynamic_compiled["finite"]),
-        "qwen_graph_logits_worst_index": int(dynamic_compiled["worst_index"]),
+        "qwen_graph_logits_trace_finite": bool(dynamic_candidate["finite"]),
+        "qwen_graph_logits_worst_index": int(dynamic_candidate["worst_index"]),
         "qwen_dynamic_static_logits_min_cosine": dynamic_static["min_cosine"],
         "qwen_dynamic_static_logits_max_abs_diff": dynamic_static["max_abs_diff"],
         "qwen_dynamic_static_logits_finite": bool(dynamic_static["finite"]),
         "qwen_dynamic_static_logits_worst_index": int(
             dynamic_static["worst_index"]
         ),
-        "qwen_static_compiled_logits_min_cosine": static_compiled["min_cosine"],
-        "qwen_static_compiled_logits_max_abs_diff": static_compiled["max_abs_diff"],
-        "qwen_static_compiled_logits_finite": bool(static_compiled["finite"]),
+        "qwen_same_cache_logits_min_cosine": same_cache["min_cosine"],
+        "qwen_same_cache_logits_max_abs_diff": same_cache["max_abs_diff"],
+        "qwen_same_cache_logits_finite": bool(same_cache["finite"]),
+        "qwen_same_cache_logits_worst_index": int(same_cache["worst_index"]),
+        # Compatibility aliases for pre-v2 Inductor-only evidence consumers.
+        "qwen_static_compiled_logits_min_cosine": same_cache["min_cosine"],
+        "qwen_static_compiled_logits_max_abs_diff": same_cache["max_abs_diff"],
+        "qwen_static_compiled_logits_finite": bool(same_cache["finite"]),
         "qwen_static_compiled_logits_worst_index": int(
-            static_compiled["worst_index"]
+            same_cache["worst_index"]
         ),
     }
 
@@ -1271,11 +1504,16 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
     )
     if (
         args.model_kind == "qwen35"
-        and qwen_optimization == "static_cache_inductor_cudagraph"
+        and qwen_optimization in QWEN_STATIC_GRAPH_ROUTES
     ):
         runner = None
         try:
-            runner = QwenStaticCacheInductorCudaGraphDecode(args, model, ids)
+            runner_class = (
+                QwenStaticCacheInductorCudaGraphDecode
+                if qwen_optimization == "static_cache_inductor_cudagraph"
+                else QwenStaticCacheRawCudaGraphDecode
+            )
+            runner = runner_class(args, model, ids)
             parity = verify_qwen_cuda_graph_parity(args, model, ids, runner)
             if not bool(parity["qwen_graph_parity_verified"]):
                 raise QwenCudaGraphParityError(parity)
@@ -1283,10 +1521,10 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
             return {
                 "median_s": float(statistics.median(samples)),
                 "samples": samples,
-                "step_backend": "qwen_static_cache_inductor_cudagraph",
+                "step_backend": f"qwen_{qwen_optimization}",
                 "effective_backend": None,
                 "cache_type": type(runner.cache).__name__,
-                "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
+                "qwen_decode_optimization_effective": qwen_optimization,
                 "qwen_cuda_graph_requested": True,
                 "qwen_cuda_graph_effective": True,
                 "qwen_decode_cuda_graph_verified": runner.cuda_graph_verified,
@@ -1311,7 +1549,7 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
         finally:
             if runner is not None:
                 runner.cleanup()
-            else:
+            elif qwen_optimization == "static_cache_inductor_cudagraph":
                 _clear_qwen_compile_state(model)
             runner = None
             gc.collect()
@@ -1339,6 +1577,7 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
             "qwen_graph_parity_verified": None,
         "qwen_graph_prefill_next_token_match": None,
         "qwen_graph_greedy_match": None,
+        "qwen_same_cache_greedy_match": None,
         "qwen_graph_probe_tokens": None,
         "qwen_graph_logits_probe_tokens": None,
         "qwen_graph_distinct_batch_prompts": None,
@@ -1356,6 +1595,10 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
         "qwen_static_compiled_logits_max_abs_diff": None,
         "qwen_static_compiled_logits_finite": None,
         "qwen_static_compiled_logits_worst_index": None,
+        "qwen_same_cache_logits_min_cosine": None,
+        "qwen_same_cache_logits_max_abs_diff": None,
+        "qwen_same_cache_logits_finite": None,
+        "qwen_same_cache_logits_worst_index": None,
         "qwen_graph_scope": None,
         "qwen_graph_capture_s": None,
         "qwen_graph_setup_s": None,
@@ -1813,37 +2056,58 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "qwen_causal_conv1d_importable": True,
             }
         )
-    if (
-        str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
-        == "static_cache_inductor_cudagraph"
-    ):
+    qwen_route = str(
+        getattr(args, "qwen_decode_optimization", "module_call_dynamic")
+    )
+    if qwen_route in QWEN_STATIC_GRAPH_ROUTES:
         required.update(
             {
                 "optimization_lane": "qwen_best_optimized_hf",
-                "qwen_decode_optimization_effective": "static_cache_inductor_cudagraph",
+                "qwen_decode_optimization_effective": qwen_route,
                 "qwen_cuda_graph_requested": True,
                 "qwen_cuda_graph_effective": True,
                 "qwen_decode_cuda_graph_verified": True,
                 "qwen_graph_parity_verified": True,
                 "qwen_graph_prefill_next_token_match": True,
                 "qwen_graph_greedy_match": True,
+                "qwen_same_cache_greedy_match": True,
                 "qwen_static_cache_eager_greedy_match": True,
                 "qwen_graph_logits_trace_finite": True,
                 "qwen_dynamic_static_logits_finite": True,
-                "qwen_static_compiled_logits_finite": True,
+                "qwen_same_cache_logits_finite": True,
                 "qwen_cache_pointer_stable": True,
-                "qwen_graph_break_count": 0,
-                "qwen_cudagraph_skip_count": 0,
-                "qwen_compile_backend_effective": "inductor",
-                "qwen_compile_mode_effective": str(
-                    getattr(args, "qwen_compile_mode", "max-autotune")
-                ),
-                "step_backend": "qwen_static_cache_inductor_cudagraph",
+                "step_backend": f"qwen_{qwen_route}",
                 "prefill_backend_effective": "module_call_dynamic_cache",
                 "prefill_cache_type": "DynamicCache",
                 "cache_type": "StaticCache",
             }
         )
+        if qwen_route == "static_cache_inductor_cudagraph":
+            required.update(
+                {
+                    "qwen_graph_break_count": 0,
+                    "qwen_cudagraph_skip_count": 0,
+                    "qwen_compile_backend_effective": "inductor",
+                    "qwen_compile_mode_effective": str(
+                        getattr(args, "qwen_compile_mode", "max-autotune")
+                    ),
+                    "qwen_graph_scope": "single_token_hf_qwen_forward",
+                }
+            )
+        else:
+            for field in (
+                "qwen_graph_break_count",
+                "qwen_cudagraph_skip_count",
+                "qwen_cudagraph_recorded_non_static_inputs",
+                "qwen_compile_backend_effective",
+                "qwen_compile_mode_effective",
+                "qwen_compile_fullgraph_effective",
+                "qwen_compile_dynamic_effective",
+            ):
+                required[field] = None
+            required["qwen_graph_scope"] = (
+                "single_token_hf_qwen_forward_argmax_token_copy"
+            )
     def matches_expected(actual: Any, expected: Any) -> bool:
         if isinstance(expected, bool):
             return type(actual) is bool and actual is expected
@@ -1856,21 +2120,34 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
     ]
     if mismatches:
         raise RuntimeError("Qwen3.5 result row failed the requested fast-path contract: " + "; ".join(mismatches))
-    if (
-        str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
-        == "static_cache_inductor_cudagraph"
-    ):
+    if qwen_route in QWEN_STATIC_GRAPH_ROUTES:
         for field in (
             "qwen_graph_logits_min_cosine",
             "qwen_dynamic_static_logits_min_cosine",
-            "qwen_static_compiled_logits_min_cosine",
         ):
-            value = float(row.get(field, float("-inf")))
-            if not math.isfinite(value) or value < 0.9999:
+            value = row.get(field)
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise RuntimeError(
                     "Qwen3.5 result row failed the requested CUDA Graph contract: "
-                    f"{field}={row.get(field)!r} (expected >=0.9999)"
+                    f"{field}={value!r} (expected finite cross-cache telemetry)"
                 )
+        same_cache = row.get("qwen_same_cache_logits_min_cosine")
+        if (
+            not isinstance(same_cache, (int, float))
+            or not math.isfinite(same_cache)
+            or same_cache < 0.9999
+        ):
+            raise RuntimeError(
+                "Qwen3.5 result row failed the requested CUDA Graph contract: "
+                f"qwen_same_cache_logits_min_cosine={same_cache!r} "
+                "(expected >=0.9999)"
+            )
+        launches = row.get("qwen_cuda_graph_launch_count")
+        if not isinstance(launches, (int, float)) or launches <= 0:
+            raise RuntimeError(
+                "Qwen3.5 result row did not prove CUDA Graph replay: "
+                f"qwen_cuda_graph_launch_count={launches!r}"
+            )
 
 
 def benchmark_loaded(
@@ -1990,7 +2267,7 @@ def benchmark_loaded(
             "module_call_dynamic_cache"
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
-            == "static_cache_inductor_cudagraph"
+            in QWEN_STATIC_GRAPH_ROUTES
             else "module_call" if args.model_kind == "qwen35" else None
         ),
         "prefill_backend_effective": prefill_backend
@@ -1998,7 +2275,7 @@ def benchmark_loaded(
             "module_call_dynamic_cache"
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
-            == "static_cache_inductor_cudagraph"
+            in QWEN_STATIC_GRAPH_ROUTES
             else "module_call" if args.model_kind == "qwen35" else None
         ),
         "prefill_cache_type": "DynamicCache" if args.model_kind == "qwen35" else None,
@@ -2017,7 +2294,7 @@ def benchmark_loaded(
             "independent_best_prefill_and_decode"
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
-            == "static_cache_inductor_cudagraph"
+            in QWEN_STATIC_GRAPH_ROUTES
             else "continuous_single_cache_path" if args.model_kind == "qwen35" else None
         ),
         "qwen_decode_optimization_effective": decode_timing[
@@ -2033,6 +2310,9 @@ def benchmark_loaded(
             "qwen_graph_prefill_next_token_match"
         ],
         "qwen_graph_greedy_match": decode_timing["qwen_graph_greedy_match"],
+        "qwen_same_cache_greedy_match": decode_timing[
+            "qwen_same_cache_greedy_match"
+        ],
         "qwen_static_cache_eager_greedy_match": decode_timing[
             "qwen_static_cache_eager_greedy_match"
         ],
@@ -2081,6 +2361,18 @@ def benchmark_loaded(
         ],
         "qwen_static_compiled_logits_worst_index": decode_timing[
             "qwen_static_compiled_logits_worst_index"
+        ],
+        "qwen_same_cache_logits_min_cosine": decode_timing[
+            "qwen_same_cache_logits_min_cosine"
+        ],
+        "qwen_same_cache_logits_max_abs_diff": decode_timing[
+            "qwen_same_cache_logits_max_abs_diff"
+        ],
+        "qwen_same_cache_logits_finite": decode_timing[
+            "qwen_same_cache_logits_finite"
+        ],
+        "qwen_same_cache_logits_worst_index": decode_timing[
+            "qwen_same_cache_logits_worst_index"
         ],
         "qwen_graph_scope": decode_timing["qwen_graph_scope"],
         "qwen_graph_capture_s": decode_timing["qwen_graph_capture_s"],
@@ -2226,11 +2518,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--require-qwen-fast-path", action="store_true")
     ap.add_argument(
         "--qwen-decode-optimization",
-        choices=["module_call_dynamic", "static_cache_inductor_cudagraph"],
+        choices=["module_call_dynamic", *sorted(QWEN_STATIC_GRAPH_ROUTES)],
         default="module_call_dynamic",
         help=(
             "Decode invocation layer. The optimized Qwen lane uses HF StaticCache, "
-            "Inductor max-autotune, and verified CUDA Graph replay."
+            "and either verified Inductor CUDAGraph Trees or raw CUDA Graph replay."
         ),
     )
     ap.add_argument(
