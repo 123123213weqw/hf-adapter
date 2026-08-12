@@ -53,10 +53,10 @@ The corrected Qwen Decode medians on RTX 4090 are:
 
 | Qwen3.5 | B1 | B8 |
 |---|---:|---:|
-| 0.8B | 35.512 tok/s | 268.928 tok/s |
-| 2B | 35.115 tok/s | 268.261 tok/s |
-| 4B | 25.443 tok/s | 195.923 tok/s |
-| 9B | 25.499 tok/s | 197.472 tok/s |
+| 0.8B | 35.5 tok/s | 269 tok/s |
+| 2B | 35.1 tok/s | 268 tok/s |
+| 4B | 25.4 tok/s | 196 tok/s |
+| 9B | 25.5 tok/s | 197 tok/s |
 
 The environment is also part of the result: all cards must use the same
 Python, PyTorch+CUDA build, Transformers revision, FLA revision,
@@ -162,13 +162,14 @@ benchmark telemetry are shown in billions, rounded to three decimal places:
 > 3090/4090/5090 comparison.
 
 The table lists every GPU, model pair, and batch combination in the promoted
-optimized-Qwen evidence. `RWKV P / D tok/s` and `Qwen P / D tok/s` are the
-separately computed median throughputs over the declared cells, rounded to three
-decimal places. `Raw P / D` and `Adjusted P / D` are medians of the matched
-cell-level ratios, so they need not equal a division of the two displayed
-throughput medians. The RTX 4090 rows below have been refreshed from the
-promoted unified artifact; other rows in this section retain their historical
-contracts.
+optimized-Qwen evidence. Rows are ordered by RWKV model size, GPU, then B1/B8.
+`RWKV P / D tok/s` and `Qwen P / D tok/s` are separately computed medians over
+the declared cells. Throughput at or above 100 tok/s is shown with zero decimal
+places; lower throughput is shown with one decimal place. `Raw P / D` and
+`Adjusted P / D` remain medians of matched cell-level ratios, so they need not
+equal a division of the displayed throughput medians. The RTX 4090 rows below
+have been refreshed from the promoted unified artifact; other rows retain their
+historical contracts.
 
 For RTX 4080, the stricter cell-level gate now passes **36/36 adjusted
 Prefill cells and 36/36 adjusted Decode cells**; the full-matrix minima are
@@ -179,39 +180,39 @@ For RTX 4090, the latest strict gate passes **48/48 adjusted Prefill cells and
 
 | GPU | Model pair | Batch | Scope | RWKV active params | Qwen active params | RWKV P / D tok/s | Qwen P / D tok/s | Raw P / D | Adjusted P / D | Evidence |
 | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| V100 32GB | 1.5B / 2B | B1 | P512/D64 | 1.527B | 1.882B | **10,425.596 / 151.357** | **3,702.375 / 25.596** | **2.82x / 5.91x** | **2.29x / 4.80x** | [V100](../bench/v100_active_b1b8_20260715/README.md) |
-| V100 32GB | 1.5B / 2B | B8 | P512/D64 | 1.527B | 1.882B | **20,729.017 / 816.606** | **3,833.197 / 154.941** | **5.41x / 5.27x** | **4.39x / 4.28x** | [V100](../bench/v100_active_b1b8_20260715/README.md) |
-| RTX 3090 | 0.4B / 0.8B | B1 | 3 cells | 0.451B | 0.752B | **29,368.244 / 293.131** | **7,155.265 / 26.529** | **4.10x / 11.05x** | **2.46x / 6.62x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 0.4B / 0.8B | B8 | 3 cells | 0.451B | 0.752B | **78,949.489 / 1,691.636** | **32,678.327 / 213.479** | **2.47x / 7.93x** | **1.48x / 4.75x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 1.5B / 2B | B1 | 3 cells | 1.527B | 1.882B | **17,641.354 / 164.035** | **8,528.864 / 28.516** | **2.12x / 5.75x** | **1.72x / 4.67x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 1.5B / 2B | B8 | 3 cells | 1.527B | 1.882B | **29,162.697 / 984.864** | **16,416.432 / 220.473** | **1.66x / 4.47x** | **1.34x / 3.63x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 2.9B / 4B | B1 | 3 cells | 2.948B | 4.206B | **11,774.089 / 88.681** | **5,657.408 / 19.247** | **2.08x / 4.61x** | **1.46x / 3.23x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 2.9B / 4B | B8 | 3 cells | 2.948B | 4.206B | **15,776.063 / 596.485** | **7,093.916 / 150.580** | **2.14x / 3.96x** | **1.50x / 2.78x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 7.2B / 9B | B1 | 3 cells | 7.199B | 8.954B | **5,763.950 / 46.434** | **3,616.109 / 19.718** | **1.63x / 2.35x** | **1.31x / 1.89x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 3090 | 7.2B / 9B | B8 | 3 cells | 7.199B | 8.954B | **6,632.697 / 341.752** | **4,155.688 / 164.172** | **1.60x / 2.08x** | **1.28x / 1.67x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
-| RTX 4080 | 0.4B / 0.8B | B1 | 6 cells, all pass | 0.451B | 0.752B | **45,537.844 / 492.031** | **24,889.204 / 100.247** | **1.83x / 4.91x** | **1.10x / 2.94x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4080 | 0.4B / 0.8B | B8 | 6 cells, all pass | 0.451B | 0.752B | **103,570.967 / 3,205.784** | **50,003.817 / 768.019** | **1.98x / 4.17x** | **1.19x / 2.50x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4080 | 1.5B / 2B | B1 | 6 cells, all pass | 1.527B | 1.882B | **30,857.745 / 193.892** | **19,871.050 / 101.785** | **1.55x / 1.90x** | **1.26x / 1.55x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4080 | 1.5B / 2B | B8 | 6 cells, all pass | 1.527B | 1.882B | **38,144.151 / 1,356.277** | **21,602.088 / 765.144** | **1.76x / 1.77x** | **1.43x / 1.44x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4080 | 2.9B / 4B | B1 | 6 cells, all pass | 2.948B | 4.206B | **14,276.348 / 102.670** | **8,818.521 / 62.804** | **1.75x / 1.63x** | **1.22x / 1.15x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4080 | 2.9B / 4B | B8 | 6 cells, all pass | 2.948B | 4.206B | **19,517.145 / 729.021** | **9,824.341 / 415.948** | **1.99x / 1.75x** | **1.40x / 1.23x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
-| RTX 4090 | 0.4B / 0.8B | B1 | 6 cells, all pass | 0.451B | 0.752B | **63,486.569 / 584.938** | **10,778.643 / 35.512** | **6.26x / 16.49x** | **3.75x / 9.88x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 0.4B / 0.8B | B8 | 6 cells, all pass | 0.451B | 0.752B | **147,413.150 / 3,845.191** | **68,760.256 / 268.928** | **2.17x / 14.30x** | **1.30x / 8.57x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 1.5B / 2B | B1 | 6 cells, all pass | 1.527B | 1.882B | **36,381.397 / 250.624** | **10,556.757 / 35.115** | **3.51x / 7.14x** | **2.85x / 5.79x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 1.5B / 2B | B8 | 6 cells, all pass | 1.527B | 1.882B | **56,564.345 / 1,717.321** | **37,337.034 / 268.261** | **1.52x / 6.40x** | **1.23x / 5.20x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 2.9B / 4B | B1 | 6 cells, all pass | 2.948B | 4.206B | **18,773.304 / 135.744** | **7,626.521 / 25.443** | **2.49x / 5.34x** | **1.74x / 3.74x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 2.9B / 4B | B8 | 6 cells, all pass | 2.948B | 4.206B | **28,520.149 / 952.831** | **15,026.464 / 195.923** | **1.91x / 4.86x** | **1.34x / 3.41x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 7.2B / 9B | B1 | 6 cells, all pass | 7.199B | 8.954B | **10,842.197 / 61.616** | **7,476.292 / 25.499** | **1.45x / 2.42x** | **1.17x / 1.94x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 4090 | 7.2B / 9B | B8 | 6 cells, all pass | 7.199B | 8.954B | **13,836.436 / 449.689** | **8,525.349 / 197.471** | **1.62x / 2.28x** | **1.30x / 1.83x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
-| RTX 5070 Laptop | 1.5B / 2B | B8 | 6 cells | 1.527B | 1.882B | **10,769.749 / 690.089** | **8,239.454 / 268.649** | **1.33x / 2.62x** | **1.08x / 2.13x** | [5070](../bench/5070_qwen35_full_fla_bsz8_20260714/README.md) |
-| RTX 5090 | 0.4B / 0.8B | B1 | 3 cells | 0.451B | 0.752B | **58,104.948 / 1,121.486** | **15,886.187 / 56.664** | **3.86x / 19.79x** | **2.31x / 11.85x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 1.5B / 2B | B1 | 3 cells | 1.527B | 1.882B | **33,697.614 / 547.344** | **15,795.251 / 56.667** | **2.16x / 9.63x** | **1.75x / 7.82x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 2.9B / 4B | B1 | 3 cells | 2.948B | 4.206B | **21,787.270 / 309.185** | **11,794.854 / 41.328** | **1.87x / 7.49x** | **1.31x / 5.25x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 7.2B / 9B | B1 | 3 cells | 7.199B | 8.954B | **14,875.687 / 145.995** | **10,651.870 / 41.721** | **1.42x / 3.50x** | **1.14x / 2.81x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 0.4B / 0.8B | B8 | 3 cells | 0.451B | 0.752B | **206,364.189 / 3,431.711** | **93,885.606 / 429.382** | **2.24x / 7.99x** | **1.34x / 4.79x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 1.5B / 2B | B8 | 3 cells | 1.527B | 1.882B | **82,339.449 / 2,060.857** | **50,353.472 / 434.033** | **1.43x / 4.77x** | **1.16x / 3.87x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 2.9B / 4B | B8 | 3 cells | 2.948B | 4.206B | **37,325.812 / 1,247.143** | **22,253.241 / 317.418** | **1.69x / 3.92x** | **1.19x / 2.75x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
-| RTX 5090 | 7.2B / 9B | B8 | 3 cells | 7.199B | 8.954B | **19,624.283 / 867.325** | **12,261.806 / 318.630** | **1.54x / 2.72x** | **1.24x / 2.19x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 3090 | 0.4B / 0.8B | B1 | 3 cells | 0.451B | 0.752B | **29,368 / 293** | **7,155 / 26.5** | **4.10x / 11.05x** | **2.46x / 6.62x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 3090 | 0.4B / 0.8B | B8 | 3 cells | 0.451B | 0.752B | **78,949 / 1,692** | **32,678 / 213** | **2.47x / 7.93x** | **1.48x / 4.75x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 4080 | 0.4B / 0.8B | B1 | 6 cells, all pass | 0.451B | 0.752B | **45,538 / 492** | **24,889 / 100** | **1.83x / 4.91x** | **1.10x / 2.94x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4080 | 0.4B / 0.8B | B8 | 6 cells, all pass | 0.451B | 0.752B | **103,571 / 3,206** | **50,004 / 768** | **1.98x / 4.17x** | **1.19x / 2.50x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4090 | 0.4B / 0.8B | B1 | 6 cells, all pass | 0.451B | 0.752B | **63,487 / 585** | **10,779 / 35.5** | **6.26x / 16.49x** | **3.75x / 9.88x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 4090 | 0.4B / 0.8B | B8 | 6 cells, all pass | 0.451B | 0.752B | **147,413 / 3,845** | **68,760 / 269** | **2.17x / 14.30x** | **1.30x / 8.57x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 5090 | 0.4B / 0.8B | B1 | 3 cells | 0.451B | 0.752B | **58,105 / 1,121** | **15,886 / 56.7** | **3.86x / 19.79x** | **2.31x / 11.85x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 5090 | 0.4B / 0.8B | B8 | 3 cells | 0.451B | 0.752B | **206,364 / 3,432** | **93,886 / 429** | **2.24x / 7.99x** | **1.34x / 4.79x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| V100 32GB | 1.5B / 2B | B1 | P512/D64 | 1.527B | 1.882B | **10,426 / 151** | **3,702 / 25.6** | **2.82x / 5.91x** | **2.29x / 4.80x** | [V100](../bench/v100_active_b1b8_20260715/README.md) |
+| V100 32GB | 1.5B / 2B | B8 | P512/D64 | 1.527B | 1.882B | **20,729 / 817** | **3,833 / 155** | **5.41x / 5.27x** | **4.39x / 4.28x** | [V100](../bench/v100_active_b1b8_20260715/README.md) |
+| RTX 3090 | 1.5B / 2B | B1 | 3 cells | 1.527B | 1.882B | **17,641 / 164** | **8,529 / 28.5** | **2.12x / 5.75x** | **1.72x / 4.67x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 3090 | 1.5B / 2B | B8 | 3 cells | 1.527B | 1.882B | **29,163 / 985** | **16,416 / 220** | **1.66x / 4.47x** | **1.34x / 3.63x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 4080 | 1.5B / 2B | B1 | 6 cells, all pass | 1.527B | 1.882B | **30,858 / 194** | **19,871 / 102** | **1.55x / 1.90x** | **1.26x / 1.55x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4080 | 1.5B / 2B | B8 | 6 cells, all pass | 1.527B | 1.882B | **38,144 / 1,356** | **21,602 / 765** | **1.76x / 1.77x** | **1.43x / 1.44x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4090 | 1.5B / 2B | B1 | 6 cells, all pass | 1.527B | 1.882B | **36,381 / 251** | **10,557 / 35.1** | **3.51x / 7.14x** | **2.85x / 5.79x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 4090 | 1.5B / 2B | B8 | 6 cells, all pass | 1.527B | 1.882B | **56,564 / 1,717** | **37,337 / 268** | **1.52x / 6.40x** | **1.23x / 5.20x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 5070 Laptop | 1.5B / 2B | B8 | 6 cells | 1.527B | 1.882B | **10,770 / 690** | **8,239 / 269** | **1.33x / 2.62x** | **1.08x / 2.13x** | [5070](../bench/5070_qwen35_full_fla_bsz8_20260714/README.md) |
+| RTX 5090 | 1.5B / 2B | B1 | 3 cells | 1.527B | 1.882B | **33,698 / 547** | **15,795 / 56.7** | **2.16x / 9.63x** | **1.75x / 7.82x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 5090 | 1.5B / 2B | B8 | 3 cells | 1.527B | 1.882B | **82,339 / 2,061** | **50,353 / 434** | **1.43x / 4.77x** | **1.16x / 3.87x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 3090 | 2.9B / 4B | B1 | 3 cells | 2.948B | 4.206B | **11,774 / 88.7** | **5,657 / 19.2** | **2.08x / 4.61x** | **1.46x / 3.23x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 3090 | 2.9B / 4B | B8 | 3 cells | 2.948B | 4.206B | **15,776 / 596** | **7,094 / 151** | **2.14x / 3.96x** | **1.50x / 2.78x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 4080 | 2.9B / 4B | B1 | 6 cells, all pass | 2.948B | 4.206B | **14,276 / 103** | **8,819 / 62.8** | **1.75x / 1.63x** | **1.22x / 1.15x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4080 | 2.9B / 4B | B8 | 6 cells, all pass | 2.948B | 4.206B | **19,517 / 729** | **9,824 / 416** | **1.99x / 1.75x** | **1.40x / 1.23x** | [4080 all P/D](../bench/4080_adjusted_pd_20260811/README.md) |
+| RTX 4090 | 2.9B / 4B | B1 | 6 cells, all pass | 2.948B | 4.206B | **18,773 / 136** | **7,627 / 25.4** | **2.49x / 5.34x** | **1.74x / 3.74x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 4090 | 2.9B / 4B | B8 | 6 cells, all pass | 2.948B | 4.206B | **28,520 / 953** | **15,026 / 196** | **1.91x / 4.86x** | **1.34x / 3.41x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 5090 | 2.9B / 4B | B1 | 3 cells | 2.948B | 4.206B | **21,787 / 309** | **11,795 / 41.3** | **1.87x / 7.49x** | **1.31x / 5.25x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 5090 | 2.9B / 4B | B8 | 3 cells | 2.948B | 4.206B | **37,326 / 1,247** | **22,253 / 317** | **1.69x / 3.92x** | **1.19x / 2.75x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 3090 | 7.2B / 9B | B1 | 3 cells | 7.199B | 8.954B | **5,764 / 46.4** | **3,616 / 19.7** | **1.63x / 2.35x** | **1.31x / 1.89x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 3090 | 7.2B / 9B | B8 | 3 cells | 7.199B | 8.954B | **6,633 / 342** | **4,156 / 164** | **1.60x / 2.08x** | **1.28x / 1.67x** | [3090 maxperf](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
+| RTX 4090 | 7.2B / 9B | B1 | 6 cells, all pass | 7.199B | 8.954B | **10,842 / 61.6** | **7,476 / 25.5** | **1.45x / 2.42x** | **1.17x / 1.94x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 4090 | 7.2B / 9B | B8 | 6 cells, all pass | 7.199B | 8.954B | **13,836 / 450** | **8,525 / 197** | **1.62x / 2.28x** | **1.30x / 1.83x** | [4090 best optimized](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
+| RTX 5090 | 7.2B / 9B | B1 | 3 cells | 7.199B | 8.954B | **14,876 / 146** | **10,652 / 41.7** | **1.42x / 3.50x** | **1.14x / 2.81x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
+| RTX 5090 | 7.2B / 9B | B8 | 3 cells | 7.199B | 8.954B | **19,624 / 867** | **12,262 / 319** | **1.54x / 2.72x** | **1.24x / 2.19x** | [5090 latest](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md) |
 
 This complete table preserves every promoted GPU/model/batch result and makes
 the raw and parameter-size-adjusted ratios directly comparable.
@@ -229,7 +230,7 @@ The strict prefill gate passes `24/24`: raw Prefill minimum/median is
 `1.227477x/1.467758x`. Raw Decode minimum/median is
 `2.069838x/4.524636x`, and adjusted Decode minimum/median is
 `1.664218x/3.433680x`. The narrowest adjusted cell is 0.4B/0.8B B8/P512,
-where RWKV delivers `78,949.489 tok/s` versus Qwen `38,534.012 tok/s`, or
+where RWKV delivers `78,949 tok/s` versus Qwen `38,534 tok/s`, or
 `1.227477x` after parameter adjustment.
 
 The exact-shape FP16-accumulation oracle passes `25/25` direct and
@@ -269,7 +270,7 @@ minimum/median `1.072987x/1.317515x`. Raw Decode has minimum/median
 `2.710952x/6.104568x`, while parameter-adjusted Decode has minimum/median
 `2.179692x/4.330813x`.
 
-The 0.4B/B1/P2048 candidate reaches `61,343.8 tok/s`, `2.2495x` its prior
+The 0.4B/B1/P2048 candidate reaches `61,344 tok/s`, `2.2495x` its prior
 candidate row. The graph-versus-eager P2048 oracle passes `8/8` model/batch
 rows with prompt/post-cache-handoff cosine minima
 `0.99999988/0.99999994` and exact greedy tokens. Removing the negative 7.2B
@@ -281,13 +282,13 @@ stacked-RKV route lowers its candidate peak from `17.4-18.6 GiB` to
 
 Apple MLX W4 is shown separately so that backend and precision remain
 consistent within each table. Concrete throughput columns are aggregate tok/s
-medians, rounded to three decimal places.
+medians with the same `>=100`: zero decimals, `<100`: one decimal rule.
 
 | Model pair | Batch / shape | RWKV active params | Qwen active params | RWKV P / D tok/s | Qwen P / D tok/s | Raw P / D | Adjusted P / D | Evidence |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 0.4B / 0.8B | B8, cold, P512 chars/D64 | 0.451B | 0.752B | **11,650.464 / 992.304** | **5,702.266 / 487.152** | **2.04x / 2.04x** | **1.22x / 1.22x** | [M5 B8](../bench/apple_bsz8_active_m5_20260714/README.md) |
-| 1.5B / 2B | B1, P512 chars/D64 | 1.527B | 1.882B | **2,126.058 / 129.152** | **1,272.860 / 89.941** | **1.67x / 1.44x** | **1.36x / 1.17x** | [M5 B1](../bench/apple_bsz1_active_m5_20260715/README.md) |
-| 1.5B / 2B | B8, cold, P512 chars/D64 | 1.527B | 1.882B | **2,249.150 / 185.593** | **1,600.504 / 132.205** | **1.41x / 1.40x** | **1.14x / 1.14x** | [M5 B8](../bench/apple_bsz8_active_m5_20260714/README.md) |
+| 0.4B / 0.8B | B8, cold, P512 chars/D64 | 0.451B | 0.752B | **11,650 / 992** | **5,702 / 487** | **2.04x / 2.04x** | **1.22x / 1.22x** | [M5 B8](../bench/apple_bsz8_active_m5_20260714/README.md) |
+| 1.5B / 2B | B1, P512 chars/D64 | 1.527B | 1.882B | **2,126 / 129** | **1,273 / 89.9** | **1.67x / 1.44x** | **1.36x / 1.17x** | [M5 B1](../bench/apple_bsz1_active_m5_20260715/README.md) |
+| 1.5B / 2B | B8, cold, P512 chars/D64 | 1.527B | 1.882B | **2,249 / 186** | **1,601 / 132** | **1.41x / 1.40x** | **1.14x / 1.14x** | [M5 B8](../bench/apple_bsz8_active_m5_20260714/README.md) |
 
 ## AMD and other hardware
 
@@ -311,12 +312,12 @@ generic RWKV route.
 
 | RWKV-7 | B1 Decode | B8 aggregate Decode | Fused / generic speedup (B1 / B8) |
 |---|---:|---:|---:|
-| 0.1B | 347.1 tok/s | 2,666.5 tok/s | `1.88x / 2.04x` |
-| 0.4B | 141.8 tok/s | 1,073.2 tok/s | `1.75x / 1.74x` |
-| 1.5B | 71.3 tok/s | 514.2 tok/s | `1.40x / 1.47x` |
-| 2.9B | 47.7 tok/s | 353.0 tok/s | `1.37x / 1.41x` |
-| 7.2B | 29.7 tok/s | 213.9 tok/s | `1.23x / 1.29x` |
-| 13.3B | 15.5 tok/s | 113.2 tok/s | `1.21x / 1.29x` |
+| 0.1B | 347 tok/s | 2,667 tok/s | `1.88x / 2.04x` |
+| 0.4B | 142 tok/s | 1,073 tok/s | `1.75x / 1.74x` |
+| 1.5B | 71.3 tok/s | 514 tok/s | `1.40x / 1.47x` |
+| 2.9B | 47.7 tok/s | 353 tok/s | `1.37x / 1.41x` |
+| 7.2B | 29.7 tok/s | 214 tok/s | `1.23x / 1.29x` |
+| 13.3B | 15.5 tok/s | 113 tok/s | `1.21x / 1.29x` |
 
 The gfx1100 output-head W8/W4 route is faster than matching RWKV FP16 in all
 40/40 Decode rows across 0.4B–13.3B and B1/B2/B4/B8. See the

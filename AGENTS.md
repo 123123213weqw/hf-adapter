@@ -103,6 +103,10 @@ contract is [`docs/architecture/RWKV7_OPERATOR_SPEC.md`](docs/architecture/RWKV7
 
 Current exact-card dispatch additions:
 
+- Cross-card benchmark tables must be ordered by model size, then GPU, then
+  B1/B8. Displayed throughput uses zero decimal places at `>=100 tok/s` and
+  one decimal place below `100 tok/s`; raw artifacts retain full precision.
+
 - Tesla V100-PCIE-32GB (`sm_70`): FP16 recurrent state is default only for
   `(hidden=1024, layers=24, batch=8)` and
   `(hidden=2048, layers=24, batch=8)`. Other batches, model shapes, and Volta
