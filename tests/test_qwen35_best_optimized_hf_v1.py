@@ -9,6 +9,7 @@ from bench.summarize_qwen35_best_optimized_hf_v1 import (
     build_summary,
     display_rate,
     ordered_rows,
+    render_markdown,
 )
 
 
@@ -183,6 +184,41 @@ def test_cross_cache_cosine_is_informational_but_same_cache_is_strict() -> None:
     assert any("qwen_same_cache_logits_min_cosine" in error for error in summary["errors"])
 
 
+@pytest.mark.parametrize(
+    "field",
+    (
+        "qwen_graph_logits_min_cosine",
+        "qwen_dynamic_static_logits_min_cosine",
+        "qwen_same_cache_logits_min_cosine",
+    ),
+)
+@pytest.mark.parametrize("invalid", (True, float("nan"), float("inf")))
+def test_cosine_gates_require_finite_real_numbers(field: str, invalid: object) -> None:
+    rows = complete_rows()
+    rows[0][field] = invalid
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any(field in error for error in summary["errors"])
+
+
+def test_raw_graph_requires_exactly_one_launch_but_inductor_accepts_positive() -> None:
+    rows = complete_rows()
+    rows[0]["qwen_cuda_graph_launch_count"] = 2
+    assert validate_matrix(rows)["status"] == "pass"
+
+    for item in rows:
+        use_raw_graph(item)
+    rows[0]["qwen_cuda_graph_launch_count"] = 2
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("qwen_cuda_graph_launch_count=2" in error for error in summary["errors"])
+
+    rows[0]["qwen_cuda_graph_launch_count"] = True
+    summary = validate_matrix(rows)
+    assert summary["status"] == "fail"
+    assert any("expected exactly 1" in error for error in summary["errors"])
+
+
 def test_one_model_cannot_mix_compile_modes_across_cells() -> None:
     rows = complete_rows()
     rows[0]["qwen_compile_mode_effective"] = "reduce-overhead"
@@ -253,6 +289,16 @@ def test_summary_sort_and_display_rounding_do_not_change_raw_values() -> None:
     assert summary["cells"][-1]["decode_tokps_total"] == 99.94
     assert display_rate(99.94) == "99.9"
     assert display_rate(100.0) == "100"
+    assert summary["correctness_contract"]["same_cache"]["cosine_threshold"] == 0.9999
+    assert summary["correctness_contract"]["cross_cache"]["cosine_threshold"] is None
+    assert summary["correctness_contract"]["cross_cache"]["cosine_interpretation"] == "informational_only"
+    assert len(summary["model_correctness"]) == 4
+    assert summary["model_correctness"][0]["same_cache_logits_min_cosine"] == 0.99999
+    markdown = render_markdown(summary)
+    assert "Same-cache hard gate" in markdown
+    assert "minimum cosine >= 0.9999" in markdown
+    assert "Cross-cache hard gates" in markdown
+    assert "cosine is informational only" in markdown
 
     first_pair = rows[0]["model_pair"]
     gpu_rows = [

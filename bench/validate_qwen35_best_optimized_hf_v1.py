@@ -81,6 +81,16 @@ def _require_positive(row: dict[str, Any], field: str, errors: list[str]) -> Non
         )
 
 
+def _is_finite_real_number(value: Any) -> bool:
+    """Return true only for finite int/float telemetry, never bool sentinels."""
+
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
+
+
 def _validate_samples(
     row: dict[str, Any], sample_field: str, median_field: str, errors: list[str]
 ) -> None:
@@ -206,6 +216,7 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
                 f"{requested_compile_mode!r} != {compile_mode!r}"
             )
         _require_positive(row, "qwen_cudagraph_recorded_non_static_inputs", errors)
+        _require_positive(row, "qwen_cuda_graph_launch_count", errors)
     elif effective_route == "static_cache_raw_cudagraph":
         _require(
             row,
@@ -224,6 +235,12 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
             "qwen_cudagraph_recorded_non_static_inputs",
         ):
             _require(row, field, None, errors)
+        launches = row.get("qwen_cuda_graph_launch_count")
+        if not _is_finite_real_number(launches) or launches != 1:
+            errors.append(
+                f"{row.get('_source', '<row>')}: qwen_cuda_graph_launch_count="
+                f"{launches!r}, expected exactly 1"
+            )
     if expected_device:
         _require(row, "device", expected_device, errors)
 
@@ -247,18 +264,14 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         "qwen_dynamic_static_logits_min_cosine",
     ):
         minimum_cosine = row.get(field)
-        if (
-            not isinstance(minimum_cosine, (int, float))
-            or not math.isfinite(minimum_cosine)
-        ):
+        if not _is_finite_real_number(minimum_cosine):
             errors.append(
                 f"{row.get('_source', '<row>')}: {field}="
                 f"{minimum_cosine!r}, expected finite cross-cache telemetry"
             )
     same_cache_cosine = row.get("qwen_same_cache_logits_min_cosine")
     if (
-        not isinstance(same_cache_cosine, (int, float))
-        or not math.isfinite(same_cache_cosine)
+        not _is_finite_real_number(same_cache_cosine)
         or same_cache_cosine < 0.9999
     ):
         errors.append(
@@ -266,7 +279,6 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
             f"{same_cache_cosine!r}, expected >=0.9999"
         )
     for field in (
-        "qwen_cuda_graph_launch_count",
         "qwen_cache_tensor_pointer_count",
         "prefill_tokps_total",
         "decode_tokps_total",

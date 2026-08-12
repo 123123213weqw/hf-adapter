@@ -67,11 +67,57 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
         for (model, device, batch), group in groups.items()
     ]
+    correctness_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in ordered:
+        key = (str(row["model_size_label"]), str(row["device"]))
+        correctness_groups.setdefault(key, []).append(row)
+    model_correctness = [
+        {
+            "model_size_label": model,
+            "device": device,
+            "cells": len(group),
+            "decode_route": str(group[0]["qwen_decode_optimization_effective"]),
+            "same_cache_logits_min_cosine": min(
+                float(row["qwen_same_cache_logits_min_cosine"]) for row in group
+            ),
+            "dynamic_static_logits_min_cosine": min(
+                float(row["qwen_dynamic_static_logits_min_cosine"]) for row in group
+            ),
+            "dynamic_candidate_logits_min_cosine": min(
+                float(row["qwen_graph_logits_min_cosine"]) for row in group
+            ),
+        }
+        for (model, device), group in correctness_groups.items()
+    ]
     return {
         "schema_version": 2,
         "benchmark_matrix": "qwen35_best_optimized_hf_v1",
         "sort_order": ["model_size", "gpu", "batch", "prompt", "decode"],
         "display_rounding": {">=100": 0, "<100": 1},
+        "correctness_contract": {
+            "same_cache": {
+                "comparison": "StaticCache eager vs candidate graph route",
+                "hard_gates": [
+                    "finite logits trace",
+                    "full-horizon greedy match",
+                    "minimum cosine >= 0.9999",
+                ],
+                "cosine_threshold": 0.9999,
+            },
+            "cross_cache": {
+                "comparisons": [
+                    "DynamicCache eager vs StaticCache eager",
+                    "DynamicCache eager vs candidate graph route",
+                ],
+                "hard_gates": [
+                    "finite logits traces",
+                    "full-horizon greedy match",
+                    "prefill-next-token match",
+                ],
+                "cosine_threshold": None,
+                "cosine_interpretation": "informational_only",
+            },
+        },
         "rows": len(ordered),
         "decode_routes_by_model": {
             model: sorted(
@@ -83,6 +129,7 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             )
             for model in sorted({str(row["model_size_label"]) for row in ordered})
         },
+        "model_correctness": model_correctness,
         "model_batch_medians": medians,
         "cells": [
             {
@@ -117,11 +164,39 @@ def render_markdown(summary: dict[str, Any]) -> str:
         "Display values use 0 decimals at >=100 tok/s and 1 decimal below 100; "
         "JSONL and JSON retain the original numeric values and all seven samples.",
         "",
+        "## Correctness contract",
+        "",
+        "**Same-cache hard gate:** StaticCache eager vs the candidate graph route "
+        "must have finite logits, full-horizon greedy-token equality, and minimum "
+        "cosine >= 0.9999.",
+        "",
+        "**Cross-cache hard gates:** DynamicCache eager vs StaticCache eager and "
+        "DynamicCache eager vs the candidate graph route must have finite logits, "
+        "full-horizon greedy-token equality, and prefill-next-token equality. "
+        "Cross-cache cosine is informational only and has no acceptance threshold.",
+        "",
+        "| Qwen3.5 | GPU | Route | Cells | Same-cache min cosine | Dynamic/Static min cosine | Dynamic/Candidate min cosine |",
+        "|---|---|---|---:|---:|---:|---:|",
+    ]
+    for row in summary["model_correctness"]:
+        lines.append(
+            "| {model_size_label} | {device} | {decode_route} | {cells} | "
+            "{same:.6f} | {dynamic_static:.6f} | {dynamic_candidate:.6f} |".format(
+                **row,
+                same=float(row["same_cache_logits_min_cosine"]),
+                dynamic_static=float(row["dynamic_static_logits_min_cosine"]),
+                dynamic_candidate=float(row["dynamic_candidate_logits_min_cosine"]),
+            )
+        )
+    lines.extend(
+        [
+        "",
         "## Model / batch medians",
         "",
         "| Qwen3.5 | GPU | Batch | Decode route | Cells | Prefill tok/s | Decode tok/s |",
         "|---|---|---:|---|---:|---:|---:|",
-    ]
+        ]
+    )
     for row in summary["model_batch_medians"]:
         lines.append(
             "| {model_size_label} | {device} | B{batch_size} | {decode_route} | {cells} | {prefill} | {decode} |".format(

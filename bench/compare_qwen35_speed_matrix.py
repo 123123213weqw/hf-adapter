@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,18 @@ REFERENCE_DECODE_ROUTE_CHOICES = (
     "any",
     "static_cache_cudagraph",
     *sorted(QWEN_STATIC_CACHE_CUDAGRAPH_ROUTES),
+)
+QWEN_ONLY_OPTIMIZED_MATRIX = "qwen35_best_optimized_hf_v1"
+QWEN_ONLY_OPTIMIZED_LANE = "qwen_best_optimized_hf"
+UNIFIED_MATRIX = "hf_fast_path_v1"
+FORMAL_MATRICES = {QWEN_ONLY_OPTIMIZED_MATRIX, UNIFIED_MATRIX}
+RUNTIME_FIELDS = (
+    "torch_version",
+    "torch_cuda_version",
+    "triton_version",
+    "transformers_version",
+    "fla_version",
+    "causal_conv1d_version",
 )
 
 
@@ -71,6 +84,12 @@ def cell_key(row: dict[str, Any]) -> tuple[Any, ...]:
 
 def key_dict(key: tuple[Any, ...]) -> dict[str, Any]:
     return dict(zip(CELL_FIELDS, key))
+
+
+def model_size_sort_key(value: Any) -> tuple[float, str]:
+    label = str(value or "").strip().lower()
+    match = re.search(r"(\d+(?:\.\d+)?)\s*b", label)
+    return (float(match.group(1)) if match else float("inf"), label)
 
 
 def ratio(candidate: Any, reference: Any) -> float | None:
@@ -143,7 +162,19 @@ def reference_routes_by_model(
         routes.setdefault(model, set()).add(
             str(route) if route is not None else "<missing>"
         )
-    return {model: sorted(values) for model, values in sorted(routes.items())}
+    return {
+        model: sorted(routes[model])
+        for model in sorted(routes, key=model_size_sort_key)
+    }
+
+
+def row_model_label(row: dict[str, Any]) -> str:
+    return str(
+        row.get("model_size_label")
+        or row.get("model_pair")
+        or row.get("model_name")
+        or "<unknown>"
+    )
 
 
 def compare(
@@ -179,6 +210,63 @@ def compare(
         if min_decode_active_parameter_throughput_ratio is not None
         else min_active_parameter_throughput_ratio
     )
+    role_rows = {
+        role: [row for row in rows if str(row.get("model_role") or "") == role]
+        for role in ("candidate", "reference")
+    }
+    matrices_by_role = {
+        role: sorted({str(row.get("benchmark_matrix") or "<missing>") for row in values})
+        for role, values in role_rows.items()
+    }
+    all_matrices = sorted(
+        {matrix for matrices in matrices_by_role.values() for matrix in matrices}
+    )
+    matrix_consistency_pass = bool(all_matrices) and all(
+        len(matrices) <= 1 for matrices in matrices_by_role.values()
+    )
+    if role_rows["candidate"] and role_rows["reference"]:
+        matrix_consistency_pass = bool(
+            matrix_consistency_pass
+            and matrices_by_role["candidate"] == matrices_by_role["reference"]
+        )
+    qwen_only_matrix_present = QWEN_ONLY_OPTIMIZED_MATRIX in all_matrices
+    qwen_only_candidate_pass = not (
+        qwen_only_matrix_present and role_rows["candidate"]
+    )
+    qwen_only_lane_pass = all(
+        row.get("optimization_lane") == QWEN_ONLY_OPTIMIZED_LANE
+        for row in role_rows["reference"]
+        if row.get("benchmark_matrix") == QWEN_ONLY_OPTIMIZED_MATRIX
+    )
+    runtime_gate_required = bool(set(all_matrices) & FORMAL_MATRICES)
+    runtime_rows = role_rows["candidate"] + role_rows["reference"]
+    runtime_fields_complete = all(
+        all(row.get(field) not in (None, "") for field in RUNTIME_FIELDS)
+        for row in runtime_rows
+    )
+    runtime_signatures = {
+        tuple(row.get(field) for field in RUNTIME_FIELDS) for row in runtime_rows
+    }
+    runtime_consistency_pass = bool(
+        not runtime_gate_required
+        or (runtime_fields_complete and len(runtime_signatures) == 1)
+    )
+    repository_commits_by_role = {
+        role: sorted(
+            {
+                str(row.get("benchmark_repository_commit"))
+                for row in values
+                if row.get("benchmark_repository_commit") not in (None, "")
+            }
+        )
+        for role, values in role_rows.items()
+    }
+    protocol_pass = bool(
+        matrix_consistency_pass
+        and qwen_only_candidate_pass
+        and qwen_only_lane_pass
+        and runtime_consistency_pass
+    )
     indexed: dict[str, dict[tuple[Any, ...], dict[str, Any]]] = {"candidate": {}, "reference": {}}
     duplicates: list[dict[str, Any]] = []
     for row in rows:
@@ -200,9 +288,61 @@ def compare(
 
     candidate_keys = set(indexed["candidate"])
     reference_keys = set(indexed["reference"])
-    joined_keys = sorted(candidate_keys & reference_keys, key=lambda key: tuple(str(x) for x in key))
+
+    def comparison_sort_key(key: tuple[Any, ...]) -> tuple[Any, ...]:
+        reference = indexed["reference"].get(key, {})
+        fields = key_dict(key)
+        return (
+            *model_size_sort_key(reference.get("model_size_label") or fields["model_pair"]),
+            str(reference.get("device") or ""),
+            int(fields["batch_size"] or 0),
+            int(fields["prompt_tokens"] or 0),
+            int(fields["decode_tokens"] or 0),
+            str(fields["quantization"] or ""),
+            str(fields["model_pair"] or ""),
+        )
+
+    joined_keys = sorted(candidate_keys & reference_keys, key=comparison_sort_key)
     missing_candidate = sorted(reference_keys - candidate_keys, key=lambda key: tuple(str(x) for x in key))
     missing_reference = sorted(candidate_keys - reference_keys, key=lambda key: tuple(str(x) for x in key))
+
+    reference_route_sets: dict[str, set[str]] = {}
+    reference_cells_by_model: dict[str, int] = {}
+    for row in role_rows["reference"]:
+        model = row_model_label(row)
+        route = row.get("qwen_decode_optimization_effective")
+        reference_route_sets.setdefault(model, set()).add(
+            str(route) if route is not None else "<missing>"
+        )
+        reference_cells_by_model[model] = reference_cells_by_model.get(model, 0) + 1
+    unique_reference_routes_pass = bool(reference_route_sets) and all(
+        len(routes) == 1 for routes in reference_route_sets.values()
+    )
+    optimized_routes_pass = all(
+        row.get("qwen_decode_optimization_effective")
+        in QWEN_STATIC_CACHE_CUDAGRAPH_ROUTES
+        for row in role_rows["reference"]
+        if row.get("benchmark_matrix") == QWEN_ONLY_OPTIMIZED_MATRIX
+    )
+    complete_optimized_reference_required = bool(
+        qwen_only_matrix_present and expected_cells == 48
+    )
+    expected_optimized_models = {"0.8b", "2b", "4b", "9b"}
+    optimized_reference_shape_pass = bool(
+        not complete_optimized_reference_required
+        or (
+            set(reference_cells_by_model) == expected_optimized_models
+            and all(
+                reference_cells_by_model.get(model) == 12
+                for model in expected_optimized_models
+            )
+        )
+    )
+    route_consistency_pass = bool(
+        unique_reference_routes_pass
+        and optimized_routes_pass
+        and optimized_reference_shape_pass
+    )
 
     cells: list[dict[str, Any]] = []
     red_cells: list[dict[str, Any]] = []
@@ -494,6 +634,8 @@ def compare(
         )
         cell = {
             **key_dict(key),
+            "model_size_label": reference.get("model_size_label"),
+            "device": reference.get("device"),
             "candidate_status": candidate.get("status"),
             "reference_status": reference.get("status"),
             "reference_backend_requested": reference.get("qwen_backend_requested"),
@@ -615,12 +757,30 @@ def compare(
     cells_pass = not red_cells and bool(cells)
     overall_pass = (
         coverage_complete
+        and protocol_pass
+        and route_consistency_pass
         and reference_backend_complete
         and reference_decode_route_complete
         and cells_pass
     )
     return {
         "axis": "qwen35_cross_model_speed_comparison",
+        "protocol": {
+            "matrices": all_matrices,
+            "matrices_by_role": matrices_by_role,
+            "matrix_consistency_pass": matrix_consistency_pass,
+            "qwen_only_matrix": QWEN_ONLY_OPTIMIZED_MATRIX,
+            "qwen_only_matrix_present": qwen_only_matrix_present,
+            "qwen_only_candidate_pass": qwen_only_candidate_pass,
+            "qwen_only_lane_pass": qwen_only_lane_pass,
+            "runtime_gate_required": runtime_gate_required,
+            "runtime_fields": list(RUNTIME_FIELDS),
+            "runtime_fields_complete": runtime_fields_complete,
+            "runtime_signature_count": len(runtime_signatures),
+            "runtime_consistency_pass": runtime_consistency_pass,
+            "repository_commits_by_role": repository_commits_by_role,
+            "complete": protocol_pass,
+        },
         "coverage": {
             "expected_cells": expected,
             "joined_cells": len(joined_keys),
@@ -659,6 +819,26 @@ def compare(
             "complete": reference_decode_route_complete,
         },
         "routes_by_model": reference_routes_by_model(rows),
+        "route_consistency": {
+            "routes_by_model": reference_routes_by_model(rows),
+            "reference_cells_by_model": {
+                model: reference_cells_by_model[model]
+                for model in sorted(reference_cells_by_model, key=model_size_sort_key)
+            },
+            "unique_route_per_model_pass": unique_reference_routes_pass,
+            "optimized_routes_pass": optimized_routes_pass,
+            "complete_optimized_reference_required": (
+                complete_optimized_reference_required
+            ),
+            "optimized_reference_cells_per_model": (
+                12 if complete_optimized_reference_required else None
+            ),
+            "optimized_reference_shape_pass": optimized_reference_shape_pass,
+            "complete": route_consistency_pass,
+        },
+        "unified_main_table_eligible": bool(
+            overall_pass and not qwen_only_matrix_present
+        ),
         "speed": {
             "min_prefill_speedup": min(prefill_ratios) if prefill_ratios else None,
             "median_prefill_speedup": median_or_none(prefill_ratios),
@@ -750,6 +930,11 @@ def compare(
         "gates": {
             "coverage_pass": coverage_complete,
             "duplicate_free_pass": not duplicates,
+            "protocol_pass": protocol_pass,
+            "matrix_consistency_pass": matrix_consistency_pass,
+            "runtime_consistency_pass": runtime_consistency_pass,
+            "qwen_only_candidate_pass": qwen_only_candidate_pass,
+            "route_consistency_pass": route_consistency_pass,
             "speed_pass": ratios_pass,
             "backend_pass": backend_failures == 0,
             "quant_memory_pass": memory_failures == 0,

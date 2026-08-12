@@ -60,6 +60,16 @@ QWEN_STATIC_GRAPH_ROUTES = {
     "static_cache_inductor_cudagraph",
     "static_cache_raw_cudagraph",
 }
+
+
+def _is_finite_real_number(value: Any) -> bool:
+    """Return true only for finite int/float telemetry, never bool sentinels."""
+
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
 PROMPT_SEED = (
     "RWKV and Qwen are language models evaluated with identical tensor shapes. "
     "This sentence is repeated only to build deterministic benchmark tokens. "
@@ -1077,6 +1087,29 @@ class QwenStaticCacheRawCudaGraphDecode:
     capture_warmup_steps = 3
 
     def __init__(self, args: argparse.Namespace, model, ids) -> None:
+        self.args = args
+        self.model = model
+        self.ids = ids
+        self.max_cache_len = None
+        self.cache = None
+        self.static_token = None
+        self.capture_stream = None
+        self.graph = None
+        self.static_logits = None
+        self._cleanup_complete = False
+        try:
+            self._initialize()
+        except BaseException:
+            # __init__ failures do not assign the runner in timed_decode_details.
+            # Release any graph/cache tensors acquired before the failure here so
+            # a resident benchmark process can safely continue to the next cell.
+            self.cleanup(suppress_errors=True)
+            raise
+
+    def _initialize(self) -> None:
+        args = self.args
+        model = self.model
+        ids = self.ids
         if not str(args.device).startswith("cuda") or not torch.cuda.is_available():
             raise RuntimeError("static_cache_raw_cudagraph requires a live CUDA device")
         try:
@@ -1084,9 +1117,6 @@ class QwenStaticCacheRawCudaGraphDecode:
         except ImportError as exc:
             raise RuntimeError("installed Transformers does not provide StaticCache") from exc
 
-        self.args = args
-        self.model = model
-        self.ids = ids
         self.max_cache_len = (
             int(args.prompt_tokens) + int(args.warmup) + int(args.decode_tokens)
         )
@@ -1253,16 +1283,28 @@ class QwenStaticCacheRawCudaGraphDecode:
         self._refresh_pointer_gate()
         return elapsed
 
-    def cleanup(self) -> None:
-        cuda_sync(self.args.device)
-        graph = getattr(self, "graph", None)
+    def cleanup(self, *, suppress_errors: bool = False) -> None:
+        if self._cleanup_complete:
+            return
+        self._cleanup_complete = True
+        cleanup_errors: list[BaseException] = []
+        try:
+            cuda_sync(self.args.device)
+        except BaseException as exc:  # keep releasing resources after a failed capture
+            cleanup_errors.append(exc)
+        graph = self.graph
         if graph is not None:
-            graph.reset()
+            try:
+                graph.reset()
+            except BaseException as exc:
+                cleanup_errors.append(exc)
         self.static_logits = None
         self.static_token = None
         self.graph = None
         self.cache = None
         self.capture_stream = None
+        if cleanup_errors and not suppress_errors:
+            raise RuntimeError("raw CUDA Graph cleanup failed") from cleanup_errors[0]
 
 
 def _minimum_cosine(left: torch.Tensor, right: torch.Tensor) -> float:
@@ -2126,15 +2168,14 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
             "qwen_dynamic_static_logits_min_cosine",
         ):
             value = row.get(field)
-            if not isinstance(value, (int, float)) or not math.isfinite(value):
+            if not _is_finite_real_number(value):
                 raise RuntimeError(
                     "Qwen3.5 result row failed the requested CUDA Graph contract: "
                     f"{field}={value!r} (expected finite cross-cache telemetry)"
                 )
         same_cache = row.get("qwen_same_cache_logits_min_cosine")
         if (
-            not isinstance(same_cache, (int, float))
-            or not math.isfinite(same_cache)
+            not _is_finite_real_number(same_cache)
             or same_cache < 0.9999
         ):
             raise RuntimeError(
@@ -2143,10 +2184,22 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "(expected >=0.9999)"
             )
         launches = row.get("qwen_cuda_graph_launch_count")
-        if not isinstance(launches, (int, float)) or launches <= 0:
+        launch_count_valid = (
+            _is_finite_real_number(launches)
+            and (
+                launches == 1
+                if qwen_route == "static_cache_raw_cudagraph"
+                else launches > 0
+            )
+        )
+        if not launch_count_valid:
+            expected_launches = (
+                "exactly 1" if qwen_route == "static_cache_raw_cudagraph" else "> 0"
+            )
             raise RuntimeError(
                 "Qwen3.5 result row did not prove CUDA Graph replay: "
-                f"qwen_cuda_graph_launch_count={launches!r}"
+                f"qwen_cuda_graph_launch_count={launches!r} "
+                f"(expected {expected_launches})"
             )
 
 

@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from bench.bench_cross_model_speed import (  # noqa: E402
     _logits_trace_metrics,
     QwenCudaGraphParityError,
+    QwenStaticCacheRawCudaGraphDecode,
     build_exact_prompt,
     effective_quantization_metadata,
     enforce_qwen_backend,
@@ -87,6 +88,56 @@ def test_parity_failure_row_preserves_structured_diagnostics() -> None:
     assert result["qwen_graph_logits_trace_finite"] is False
     assert result["qwen_graph_logits_worst_index"] == 7
     assert "Infinity" not in json.dumps(result, allow_nan=False)
+
+
+def test_raw_cudagraph_constructor_failure_cleans_partial_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    created: dict[str, object] = {}
+
+    class PartialGraph:
+        def reset(self) -> None:
+            events.append("reset")
+
+    def fail_during_initialize(self) -> None:
+        created["runner"] = self
+        self.cache = object()
+        self.static_token = object()
+        self.capture_stream = object()
+        self.graph = PartialGraph()
+        self.static_logits = object()
+        raise RuntimeError("capture failed")
+
+    def fail_sync(_device: str) -> None:
+        events.append("sync")
+        raise RuntimeError("sync failed")
+
+    monkeypatch.setattr(
+        QwenStaticCacheRawCudaGraphDecode,
+        "_initialize",
+        fail_during_initialize,
+    )
+    monkeypatch.setattr("bench.bench_cross_model_speed.cuda_sync", fail_sync)
+
+    with pytest.raises(RuntimeError, match="capture failed"):
+        QwenStaticCacheRawCudaGraphDecode(
+            SimpleNamespace(device="cuda"),
+            object(),
+            object(),
+        )
+
+    runner = created["runner"]
+    assert events == ["sync", "reset"]
+    assert runner._cleanup_complete is True
+    assert runner.cache is None
+    assert runner.static_token is None
+    assert runner.capture_stream is None
+    assert runner.graph is None
+    assert runner.static_logits is None
+
+    runner.cleanup()
+    assert events == ["sync", "reset"]
 
 
 def test_resident_exact_cells_avoid_cartesian_reruns() -> None:
@@ -547,6 +598,202 @@ def test_comparator_static_cache_cudagraph_family_is_fail_closed(tmp_path: Path)
     assert summary["reference_decode_route"]["matching_cells"] == 0
     assert summary["gates"]["reference_decode_route_pass"] is False
     assert summary["red_cells"][0]["reference_decode_route_pass"] is False
+
+
+def test_comparator_rejects_mixed_legacy_and_qwen_only_protocols(tmp_path: Path) -> None:
+    candidate = row("candidate", prompt=128, prefill=120.0, decode=220.0)
+    candidate["benchmark_matrix"] = "hf_fast_path_v1"
+    reference = row("reference", prompt=128, prefill=100.0, decode=200.0)
+    reference.update(
+        {
+            "benchmark_matrix": "qwen35_best_optimized_hf_v1",
+            "optimization_lane": "qwen_best_optimized_hf",
+            "qwen_decode_optimization_effective": (
+                "static_cache_inductor_cudagraph"
+            ),
+        }
+    )
+
+    proc = run_compare(
+        tmp_path,
+        [candidate, reference],
+        "--expected-cells",
+        "1",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["protocol"]["matrices_by_role"] == {
+        "candidate": ["hf_fast_path_v1"],
+        "reference": ["qwen35_best_optimized_hf_v1"],
+    }
+    assert summary["gates"]["matrix_consistency_pass"] is False
+    assert summary["gates"]["protocol_pass"] is False
+    assert summary["gates"]["overall_pass"] is False
+
+
+def test_comparator_qwen_only_matrix_rejects_candidate_rows(tmp_path: Path) -> None:
+    rows = [
+        row("candidate", prompt=128, prefill=120.0, decode=220.0),
+        row("reference", prompt=128, prefill=100.0, decode=200.0),
+    ]
+    for item in rows:
+        item["benchmark_matrix"] = "qwen35_best_optimized_hf_v1"
+        item["optimization_lane"] = "qwen_best_optimized_hf"
+        for field, value in {
+            "torch_version": "2.8",
+            "torch_cuda_version": "12.8",
+            "triton_version": "3.4",
+            "transformers_version": "5.12",
+            "fla_version": "0.5",
+            "causal_conv1d_version": "1.6",
+        }.items():
+            item[field] = value
+    rows[1]["qwen_decode_optimization_effective"] = (
+        "static_cache_raw_cudagraph"
+    )
+
+    proc = run_compare(
+        tmp_path,
+        rows,
+        "--expected-cells",
+        "1",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["protocol"]["qwen_only_candidate_pass"] is False
+    assert summary["gates"]["qwen_only_candidate_pass"] is False
+    assert summary["unified_main_table_eligible"] is False
+
+
+def test_comparator_locks_runtime_but_allows_distinct_repository_commits(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        row("candidate", prompt=128, prefill=120.0, decode=220.0),
+        row("reference", prompt=128, prefill=100.0, decode=200.0),
+    ]
+    runtime = {
+        "torch_version": "2.8",
+        "torch_cuda_version": "12.8",
+        "triton_version": "3.4",
+        "transformers_version": "5.12",
+        "fla_version": "0.5",
+        "causal_conv1d_version": "1.6",
+    }
+    for item in rows:
+        item.update({"benchmark_matrix": "hf_fast_path_v1", **runtime})
+    rows[0]["benchmark_repository_commit"] = "candidate-commit"
+    rows[1]["benchmark_repository_commit"] = "reference-commit"
+
+    proc = run_compare(
+        tmp_path,
+        rows,
+        "--expected-cells",
+        "1",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["protocol"]["runtime_signature_count"] == 1
+    assert summary["protocol"]["runtime_consistency_pass"] is True
+    assert summary["protocol"]["repository_commits_by_role"] == {
+        "candidate": ["candidate-commit"],
+        "reference": ["reference-commit"],
+    }
+
+
+def test_comparator_rejects_mixed_reference_routes_per_model(tmp_path: Path) -> None:
+    references = [
+        row("reference", prompt=128, prefill=100.0, decode=200.0),
+        row("reference", prompt=512, prefill=200.0, decode=300.0),
+    ]
+    references[0]["qwen_decode_optimization_effective"] = (
+        "static_cache_inductor_cudagraph"
+    )
+    references[1]["qwen_decode_optimization_effective"] = (
+        "static_cache_raw_cudagraph"
+    )
+    candidates = [
+        row("candidate", prompt=128, prefill=120.0, decode=220.0),
+        row("candidate", prompt=512, prefill=220.0, decode=330.0),
+    ]
+
+    proc = run_compare(
+        tmp_path,
+        [*candidates, *references],
+        "--expected-cells",
+        "2",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["routes_by_model"] == {
+        "rwkv-1.5b__qwen3.5-2b": [
+            "static_cache_inductor_cudagraph",
+            "static_cache_raw_cudagraph",
+        ]
+    }
+    assert summary["route_consistency"]["unique_route_per_model_pass"] is False
+    assert summary["gates"]["route_consistency_pass"] is False
+    assert summary["gates"]["overall_pass"] is False
+
+
+def test_comparator_sorts_cells_by_model_gpu_batch_prompt_decode(tmp_path: Path) -> None:
+    specs = [
+        ("rwkv-7.2b__qwen3.5-9b", "9b", "GPU-A", 1, 128, 512),
+        ("rwkv-0.4b__qwen3.5-0.8b", "0.8b", "GPU-Z", 8, 512, 128),
+        ("rwkv-2.9b__qwen3.5-4b", "4b", "GPU-A", 1, 128, 128),
+        ("rwkv-0.4b__qwen3.5-0.8b", "0.8b", "GPU-A", 1, 2048, 512),
+    ]
+    rows = []
+    for pair, size, device, batch, prompt, decode in reversed(specs):
+        for role, prefill, decode_rate in (
+            ("candidate", 120.0, 220.0),
+            ("reference", 100.0, 200.0),
+        ):
+            item = row(role, prompt=prompt, prefill=prefill, decode=decode_rate)
+            item.update(
+                {
+                    "model_pair": pair,
+                    "model_size_label": size,
+                    "device": device,
+                    "batch_size": batch,
+                    "decode_tokens": decode,
+                }
+            )
+            rows.append(item)
+
+    proc = run_compare(
+        tmp_path,
+        rows,
+        "--expected-cells",
+        "4",
+        "--fail-on-gate",
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert [
+        (
+            cell["model_size_label"],
+            cell["device"],
+            cell["batch_size"],
+            cell["prompt_tokens"],
+            cell["decode_tokens"],
+        )
+        for cell in summary["cells"]
+    ] == [
+        ("0.8b", "GPU-A", 1, 2048, 512),
+        ("0.8b", "GPU-Z", 8, 512, 128),
+        ("4b", "GPU-A", 1, 128, 128),
+        ("9b", "GPU-A", 1, 128, 512),
+    ]
 
 
 def test_comparator_strict_backend_and_quant_memory_gates(tmp_path: Path) -> None:
@@ -1341,6 +1588,13 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
         "qwen_compile_dynamic_effective": None,
     }
     validate_qwen_result_contract(raw_args, raw_passing)
+    validate_qwen_result_contract(
+        args, {**passing, "qwen_cuda_graph_launch_count": 2}
+    )
+    with pytest.raises(RuntimeError, match="expected exactly 1"):
+        validate_qwen_result_contract(
+            raw_args, {**raw_passing, "qwen_cuda_graph_launch_count": 2}
+        )
     with pytest.raises(RuntimeError, match="qwen_compile_backend_effective"):
         validate_qwen_result_contract(
             raw_args, {**raw_passing, "qwen_compile_backend_effective": "inductor"}
@@ -1368,6 +1622,14 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     validate_qwen_result_contract(
         args, {**passing, "qwen_dynamic_static_logits_min_cosine": 0.99}
     )
+    for field in (
+        "qwen_graph_logits_min_cosine",
+        "qwen_dynamic_static_logits_min_cosine",
+        "qwen_same_cache_logits_min_cosine",
+    ):
+        for invalid in (True, float("nan"), float("inf")):
+            with pytest.raises(RuntimeError, match=field):
+                validate_qwen_result_contract(args, {**passing, field: invalid})
     with pytest.raises(RuntimeError, match="qwen_same_cache_logits_min_cosine"):
         validate_qwen_result_contract(
             args, {**passing, "qwen_same_cache_logits_min_cosine": 0.9998}
