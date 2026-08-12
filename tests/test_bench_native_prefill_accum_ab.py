@@ -75,3 +75,5 @@ def test_direct_script_entrypoint_resolves_bench_package() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "Paired same-process A/B" in completed.stdout
+    assert "--no-prefill-graph" in completed.stdout
+    assert "--prefill-chunk-size" in completed.stdout
