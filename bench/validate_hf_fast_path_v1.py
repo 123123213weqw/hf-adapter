@@ -28,6 +28,10 @@ RUNTIME_FIELDS = (
     "fla_version",
     "causal_conv1d_version",
 )
+RWKV_CONTRACTS = {
+    "diagnostic_no_graph": "native_jit_without_cuda_graph",
+    "best_optimized_hf": "exact_card_best_optimized_hf",
+}
 
 
 def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -81,19 +85,36 @@ def _validate_common(
         errors.append(f"{row.get('_source', '<row>')}: unexpected B/P/D cell {shape!r}")
 
 
-def _validate_candidate(row: dict[str, Any], errors: list[str]) -> None:
-    for field, expected in (
-        ("rwkv_fast_token_backend_requested", "native_jit"),
-        ("rwkv_native_model_backend_requested", "native_jit"),
-        ("rwkv_prefill_graph_requested", "0"),
-        ("effective_backend", "native_jit"),
-    ):
-        _require(row, field, expected, errors)
-    for field in ("effective_backend", "step_backend", "prefill_backend_effective"):
-        if "graph" in str(row.get(field, "")).lower():
-            errors.append(
-                f"{row.get('_source', '<row>')}: {field} proves a CUDA Graph route: {row.get(field)!r}"
-            )
+def _validate_candidate(
+    row: dict[str, Any], *, rwkv_contract: str, errors: list[str]
+) -> None:
+    _require(row, "optimization_lane", rwkv_contract, errors)
+    if rwkv_contract == "diagnostic_no_graph":
+        for field, expected in (
+            ("rwkv_fast_token_backend_requested", "native_jit"),
+            ("rwkv_native_model_backend_requested", "native_jit"),
+            ("rwkv_prefill_graph_requested", "0"),
+            ("effective_backend", "native_jit"),
+        ):
+            _require(row, field, expected, errors)
+        for field in ("effective_backend", "step_backend", "prefill_backend_effective"):
+            if "graph" in str(row.get(field, "")).lower():
+                errors.append(
+                    f"{row.get('_source', '<row>')}: {field} proves a CUDA Graph route: {row.get(field)!r}"
+                )
+        return
+
+    if rwkv_contract == "best_optimized_hf":
+        for field, expected in (
+            ("rwkv_fast_token_backend_requested", "native_graph"),
+            ("rwkv_native_model_backend_requested", "native_graph"),
+            ("rwkv_prefill_graph_requested", "1"),
+            ("effective_backend", "native_graph"),
+        ):
+            _require(row, field, expected, errors)
+        return
+
+    errors.append(f"unsupported RWKV contract: {rwkv_contract!r}")
 
 
 def _validate_reference(row: dict[str, Any], errors: list[str]) -> None:
@@ -116,8 +137,11 @@ def validate_matrix(
     reference_rows: list[dict[str, Any]],
     *,
     expected_device: str = "",
+    rwkv_contract: str = "diagnostic_no_graph",
 ) -> dict[str, Any]:
     errors: list[str] = []
+    if rwkv_contract not in RWKV_CONTRACTS:
+        errors.append(f"unsupported RWKV contract: {rwkv_contract!r}")
     if len(candidate_rows) != 48:
         errors.append(f"candidate row count={len(candidate_rows)}, expected 48")
     if len(reference_rows) != 48:
@@ -125,7 +149,7 @@ def validate_matrix(
 
     for row in candidate_rows:
         _validate_common(row, role="candidate", kind="rwkv", expected_device=expected_device, errors=errors)
-        _validate_candidate(row, errors)
+        _validate_candidate(row, rwkv_contract=rwkv_contract, errors=errors)
     for row in reference_rows:
         _validate_common(row, role="reference", kind="qwen35", expected_device=expected_device, errors=errors)
         _validate_reference(row, errors)
@@ -171,7 +195,8 @@ def validate_matrix(
         "runtime_fields": list(RUNTIME_FIELDS),
         "runtime_signature_count": len(runtime_signatures),
         "qwen_contract": "official_fla_plus_causal_conv1d",
-        "rwkv_contract": "native_jit_without_cuda_graph",
+        "rwkv_optimization_lane": rwkv_contract,
+        "rwkv_contract": RWKV_CONTRACTS.get(rwkv_contract, "unsupported"),
         "errors": errors,
     }
     return summary
@@ -186,6 +211,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-results", type=Path, nargs="+", required=True)
     parser.add_argument("--reference-results", type=Path, nargs="+", required=True)
     parser.add_argument("--expected-device", default="")
+    parser.add_argument(
+        "--rwkv-contract",
+        choices=sorted(RWKV_CONTRACTS),
+        default="diagnostic_no_graph",
+    )
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--main-table", type=Path, required=True)
     return parser.parse_args()
@@ -195,7 +225,12 @@ def main() -> int:
     args = parse_args()
     candidates = read_rows(args.candidate_results)
     references = read_rows(args.reference_results)
-    summary = validate_matrix(candidates, references, expected_device=args.expected_device)
+    summary = validate_matrix(
+        candidates,
+        references,
+        expected_device=args.expected_device,
+        rwkv_contract=args.rwkv_contract,
+    )
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if summary["status"] != "pass":

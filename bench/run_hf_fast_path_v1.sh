@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one fail-closed 96-row RWKV/Qwen HF fast-path v1 card matrix.
+# Run one fail-closed 96-row strong-Qwen/best-RWKV HF fast-path v1 card matrix.
 set -euo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -12,6 +12,8 @@ WRITE_RUNTIME_LOCK="${WRITE_RUNTIME_LOCK:-}"
 FLA_SOURCE_COMMIT="${FLA_SOURCE_COMMIT:-}"
 CAUSAL_CONV1D_SOURCE_COMMIT="${CAUSAL_CONV1D_SOURCE_COMMIT:-}"
 BENCHMARK_MATRIX="hf_fast_path_v1"
+RWKV_OPTIMIZATION_LANE="${RWKV_OPTIMIZATION_LANE:-best_optimized_hf}"
+QWEN_REFERENCE_DIR="${QWEN_REFERENCE_DIR:-}"
 
 required=(
   RWKV_04_MODEL RWKV_15_MODEL RWKV_29_MODEL RWKV_72_MODEL
@@ -32,6 +34,18 @@ fi
 if [[ -z "${FLA_SOURCE_COMMIT}" || -z "${CAUSAL_CONV1D_SOURCE_COMMIT}" ]]; then
   echo "FLA_SOURCE_COMMIT and CAUSAL_CONV1D_SOURCE_COMMIT are required" >&2
   exit 2
+fi
+if [[ "${RWKV_OPTIMIZATION_LANE}" != "best_optimized_hf" && "${RWKV_OPTIMIZATION_LANE}" != "diagnostic_no_graph" ]]; then
+  echo "RWKV_OPTIMIZATION_LANE must be best_optimized_hf or diagnostic_no_graph" >&2
+  exit 2
+fi
+if [[ -n "${QWEN_REFERENCE_DIR}" ]]; then
+  for file in qwen_0p8.jsonl qwen_2b.jsonl qwen_4b.jsonl qwen_9b.jsonl; do
+    if [[ ! -f "${QWEN_REFERENCE_DIR}/${file}" ]]; then
+      echo "QWEN_REFERENCE_DIR is missing ${file}" >&2
+      exit 2
+    fi
+  done
 fi
 for name in "${required[@]}"; do
   if [[ -z "${!name:-}" || ! -d "${!name}" ]]; then
@@ -134,7 +148,12 @@ run_all_qwen() {
     "${OUT_DIR}/qwen_9b.jsonl" "${OUT_DIR}/logs/qwen_9b.log" || return
 }
 
-if ! run_all_qwen; then
+if [[ -n "${QWEN_REFERENCE_DIR}" ]]; then
+  cp "${QWEN_REFERENCE_DIR}"/qwen_0p8.jsonl "${OUT_DIR}/qwen_0p8.jsonl"
+  cp "${QWEN_REFERENCE_DIR}"/qwen_2b.jsonl "${OUT_DIR}/qwen_2b.jsonl"
+  cp "${QWEN_REFERENCE_DIR}"/qwen_4b.jsonl "${OUT_DIR}/qwen_4b.jsonl"
+  cp "${QWEN_REFERENCE_DIR}"/qwen_9b.jsonl "${OUT_DIR}/qwen_9b.jsonl"
+elif ! run_all_qwen; then
   status_label="official HF FLA + causal_conv1d path failed"
   if [[ "${GPU_MODEL}" == "5090" ]]; then
     status_label="SM120 official HF fast path unverified"
@@ -161,12 +180,12 @@ PY
 fi
 
 "${PYTHON_BIN}" - "${OUT_DIR}/qwen_official_fast_path_status.json" \
-  "${GPU_MODEL}" "${gpu_name}" <<'PY'
+  "${GPU_MODEL}" "${gpu_name}" "$([[ -n "${QWEN_REFERENCE_DIR}" ]] && echo true || echo false)" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-path, gpu_model, gpu_name = sys.argv[1:]
+path, gpu_model, gpu_name, reference_reused = sys.argv[1:]
 Path(path).write_text(json.dumps({
     "status": "pass",
     "protocol": "hf_fast_path_v1",
@@ -174,12 +193,19 @@ Path(path).write_text(json.dumps({
     "device": gpu_name,
     "main_table_eligible": True,
     "fallback_attempted": False,
+    "reference_reused": reference_reused == "true",
 }, indent=2) + "\n", encoding="utf-8")
 PY
 
-export RWKV7_FAST_TOKEN_BACKEND=native_jit
-export RWKV7_NATIVE_MODEL_BACKEND=native_jit
-export RWKV7_NATIVE_PREFILL_GRAPH=0
+if [[ "${RWKV_OPTIMIZATION_LANE}" == "best_optimized_hf" ]]; then
+  export RWKV7_FAST_TOKEN_BACKEND=native_graph
+  export RWKV7_NATIVE_MODEL_BACKEND=native_graph
+  export RWKV7_NATIVE_PREFILL_GRAPH=1
+else
+  export RWKV7_FAST_TOKEN_BACKEND=native_jit
+  export RWKV7_NATIVE_MODEL_BACKEND=native_jit
+  export RWKV7_NATIVE_PREFILL_GRAPH=0
+fi
 
 run_rwkv() {
   local model="$1" pair="$2" size="$3" output="$4" log="$5"
@@ -190,6 +216,7 @@ run_rwkv() {
     --model-pair "${pair}" \
     --model-size-label "${size}" \
     --benchmark-matrix "${BENCHMARK_MATRIX}" \
+    --optimization-lane "${RWKV_OPTIMIZATION_LANE}" \
     --dtype fp16 \
     --quantization none \
     --device cuda \
@@ -222,5 +249,6 @@ run_rwkv "${RWKV_72_MODEL}" rwkv-7.2b__qwen3.5-9b 7.2b \
     "${OUT_DIR}/qwen_0p8.jsonl" "${OUT_DIR}/qwen_2b.jsonl" \
     "${OUT_DIR}/qwen_4b.jsonl" "${OUT_DIR}/qwen_9b.jsonl" \
   --expected-device "${gpu_name}" \
+  --rwkv-contract "${RWKV_OPTIMIZATION_LANE}" \
   --summary "${OUT_DIR}/validation.json" \
   --main-table "${OUT_DIR}/main_table.jsonl"

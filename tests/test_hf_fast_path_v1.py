@@ -9,7 +9,14 @@ from bench.validate_hf_fast_path_v1 import PAIRS, validate_matrix
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def row(role: str, pair: str, batch: int, prompt: int, decode: int) -> dict:
+def row(
+    role: str,
+    pair: str,
+    batch: int,
+    prompt: int,
+    decode: int,
+    optimization_lane: str = "diagnostic_no_graph",
+) -> dict:
     candidate_size, reference_size = PAIRS[pair]
     value = {
         "_source": f"{role}:{pair}:{batch}:{prompt}:{decode}",
@@ -41,6 +48,7 @@ def row(role: str, pair: str, batch: int, prompt: int, decode: int) -> dict:
         "causal_conv1d_version": "1.5.3",
     }
     if role == "candidate":
+        value["optimization_lane"] = optimization_lane
         value.update(
             {
                 "rwkv_fast_token_backend_requested": "native_jit",
@@ -68,9 +76,9 @@ def row(role: str, pair: str, batch: int, prompt: int, decode: int) -> dict:
     return value
 
 
-def complete_rows(role: str) -> list[dict]:
+def complete_rows(role: str, optimization_lane: str = "diagnostic_no_graph") -> list[dict]:
     return [
-        row(role, pair, batch, prompt, decode)
+        row(role, pair, batch, prompt, decode, optimization_lane)
         for pair in PAIRS
         for batch, prompt, decode in product((1, 8), (128, 512, 2048), (128, 512))
     ]
@@ -96,7 +104,7 @@ def test_qwen_official_contract_failure_blocks_the_main_table() -> None:
     assert any("qwen_conv_backend_effective='fla_triton'" in error for error in summary["errors"])
 
 
-def test_rwkv_cuda_graph_or_missing_cell_blocks_the_main_table() -> None:
+def test_rwkv_cuda_graph_blocks_the_diagnostic_lane_or_missing_cell() -> None:
     candidates = complete_rows("candidate")
     candidates[0]["effective_backend"] = "native_graph"
     references = complete_rows("reference")[:-1]
@@ -105,6 +113,36 @@ def test_rwkv_cuda_graph_or_missing_cell_blocks_the_main_table() -> None:
     assert any("CUDA Graph route" in error for error in summary["errors"])
     assert any("reference row count=47" in error for error in summary["errors"])
     assert any("reference missing cells" in error for error in summary["errors"])
+
+
+def test_best_optimized_hf_contract_requires_graph_routes() -> None:
+    candidates = complete_rows("candidate", "best_optimized_hf")
+    for candidate in candidates:
+        candidate.update(
+            {
+                "rwkv_fast_token_backend_requested": "native_graph",
+                "rwkv_native_model_backend_requested": "native_graph",
+                "rwkv_prefill_graph_requested": "1",
+                "effective_backend": "native_graph",
+                "step_backend": "rwkv_fast_token",
+                "prefill_backend_effective": "native_prefill_graph",
+            }
+        )
+    summary = validate_matrix(
+        candidates,
+        complete_rows("reference"),
+        rwkv_contract="best_optimized_hf",
+    )
+    assert summary["status"] == "pass"
+    assert summary["rwkv_contract"] == "exact_card_best_optimized_hf"
+
+    candidates[0]["effective_backend"] = "native_jit"
+    summary = validate_matrix(
+        candidates,
+        complete_rows("reference"),
+        rwkv_contract="best_optimized_hf",
+    )
+    assert summary["status"] == "fail"
 
 
 def test_runtime_lock_comparison_is_exact() -> None:
@@ -120,9 +158,14 @@ def test_single_card_script_is_official_and_fail_closed() -> None:
     assert "--qwen-conv-backend causal_conv1d" in text
     assert "--require-qwen-fast-path" in text
     assert "--qwen-conv-backend fla_triton" not in text
-    assert "RWKV7_FAST_TOKEN_BACKEND=native_jit" in text
-    assert "RWKV7_NATIVE_MODEL_BACKEND=native_jit" in text
-    assert "RWKV7_NATIVE_PREFILL_GRAPH=0" in text
+    assert 'RWKV_OPTIMIZATION_LANE="${RWKV_OPTIMIZATION_LANE:-best_optimized_hf}"' in text
+    assert "RWKV7_FAST_TOKEN_BACKEND=native_graph" in text
+    assert "RWKV7_NATIVE_MODEL_BACKEND=native_graph" in text
+    assert "RWKV7_NATIVE_PREFILL_GRAPH=1" in text
+    assert "diagnostic_no_graph" in text
+    assert "QWEN_REFERENCE_DIR" in text
+    assert '--optimization-lane "${RWKV_OPTIMIZATION_LANE}"' in text
+    assert '--rwkv-contract "${RWKV_OPTIMIZATION_LANE}"' in text
     assert "SM120 official HF fast path unverified" in text
     assert "--batch-sizes 1 8" in text
     assert "--prompt-tokens 128 512 2048" in text

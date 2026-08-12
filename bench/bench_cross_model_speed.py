@@ -138,6 +138,7 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "axis": "qwen35_cross_model_speed",
         "benchmark_matrix": args.benchmark_matrix,
+        "optimization_lane": str(getattr(args, "optimization_lane", "") or ""),
         "model_pair": args.model_pair,
         "model_role": args.model_role,
         "model_kind": args.model_kind,
@@ -1317,6 +1318,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--model-pair", required=True)
     ap.add_argument("--model-size-label", required=True)
     ap.add_argument("--benchmark-matrix", default="qwen35_hf")
+    ap.add_argument(
+        "--optimization-lane",
+        default="",
+        help="Auditable protocol lane, for example best_optimized_hf or diagnostic_no_graph.",
+    )
     ap.add_argument("--dtype", default="fp16", choices=sorted(DTYPES))
     ap.add_argument(
         "--quantization",

@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--model-pair", required=True)
     ap.add_argument("--model-size-label", required=True)
     ap.add_argument("--benchmark-matrix", default="qwen35_hf")
+    ap.add_argument(
+        "--optimization-lane",
+        default="",
+        help="Auditable protocol lane forwarded to every resident result row.",
+    )
     ap.add_argument("--dtype", default="fp16", choices=sorted(speed.DTYPES))
     ap.add_argument(
         "--quantization",
@@ -156,6 +161,7 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
         model_pair=args.model_pair,
         model_size_label=args.model_size_label,
         benchmark_matrix=args.benchmark_matrix,
+        optimization_lane=getattr(args, "optimization_lane", ""),
         dtype=args.dtype,
         quantization=args.quantization,
         native_quant_min_params=args.native_quant_min_params,
