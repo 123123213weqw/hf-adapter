@@ -5,7 +5,7 @@ tuning chronology. Raw rows, logs and negative experiments remain in
 [`bench/`](bench/); platform interpretation lives in
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
-Last updated: **2026-08-12**.
+Last updated: **2026-08-13**.
 
 For a consolidated RWKV-7 vs Qwen3.5 parameter/speed table and live GPU
 reproduction workflow, see the [English guide](docs/QWEN35_SPEED_COMPARISON.md)
@@ -45,11 +45,16 @@ rows share one locked runtime signature; the fail-closed validator reports no
 errors or fallback. Qwen is the strong official HF fast-operator baseline;
 RWKV is intentionally run at its best verified HF state, including CUDA Graph.
 
+RTX 5090 separately completed a 48/48 Qwen-only best-optimized HF reference on
+2026-08-13. That reference is eligible for Qwen baseline use, but the RTX 5090
+unified table remains pending: RWKV was not rerun in the same runtime, and the
+reference combines independently optimized Prefill and Decode axes.
+
 | GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
 |---|---|---:|---:|---:|---:|---|
 | RTX 4090 | `hf_fast_path_v1` + `best_optimized_hf` | 96/96 | 48/48 | 48/48 | 48/48 | **PASS** |
 | RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
-| RTX 5090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
+| RTX 5090 | `qwen35_best_optimized_hf_v1` reference-only | 48/48 Qwen; RWKV pending | — | — | — | **REFERENCE PASS / MAIN PENDING** |
 
 Across the promoted 4090 matrix, raw Prefill minimum/median is
 `1.361373x/2.315043x` and parameter-adjusted Prefill is
@@ -717,9 +722,48 @@ Sequence prefill covers g1h 2.9B and 13.3B at B1/B8 and prompt
 Evidence:
 [`bench/5090_native_official_fp16_production_20260718/`](bench/5090_native_official_fp16_production_20260718/README.md).
 
-### Full-FLA Qwen3.5 B1/B8 matrix
+### Qwen3.5 best-optimized HF reference v2
 
-The current-main artifact at
+The 2026-08-13 Qwen-only artifact completes all 48 dense-FP16 reference cells
+for Qwen3.5 0.8B/2B/4B/9B on one RTX 5090. Every row verifies the official
+Transformers FLA operators and Dao-AILab `causal_conv1d`, with no fallback.
+Prefill uses the eager DynamicCache official path. Decode uses one fixed
+correctness-passing StaticCache CUDA Graph route per model: Inductor
+`max-autotune` for 0.8B/2B and raw CUDA Graph for 4B/9B. The raw graph wrapper
+is a repository benchmark optimization, not an official Qwen graph path.
+
+This is an `independent_best_prefill_and_decode` reference envelope, not a
+continuous end-to-end cache route, TTFT result, or cache-handoff latency. It
+contains no same-runtime RWKV candidate, so it is eligible as a Qwen reference
+lane but not as the unified RTX 5090 main table. Same-cache eager-versus-Graph
+cosine is at least `0.9999860525` with finite logits and full greedy equality.
+Cross-cache cosine is informational; finite traces, full greedy equality and
+prefill-next-token equality pass.
+
+Rows are ordered by model size, GPU and B1/B8. The throughput columns are
+medians over the six Prompt/Decode cells for each model/batch slice. B8 Decode
+is aggregate throughput across eight sequences. Display rounding is
+report-only: values at or above 100 tok/s use zero decimals and lower values
+use one decimal. Full-precision values and all seven timing samples remain in
+the artifact.
+
+| Qwen3.5 | GPU | Batch | Decode route | Cells | Prefill tok/s | Decode tok/s |
+|---|---|---:|---|---:|---:|---:|
+| 0.8B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,467 | 559 |
+| 0.8B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 93,375 | 3,180 |
+| 2B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,177 | 325 |
+| 2B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 50,778 | 2,058 |
+| 4B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,042 | 120 |
+| 4B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 21,808 | 731 |
+| 9B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,461 | 79.2 |
+| 9B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 12,199 | 518 |
+
+Evidence:
+[`bench/5090_qwen35_best_optimized_hf_v1_20260813/`](bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md).
+
+### Historical Full-FLA Qwen3.5 B1/B8 matrix (2026-07-15)
+
+The historical artifact at
 [`bench/5090_g1h_qwen35_b1_b8_20260715/`](bench/5090_g1h_qwen35_b1_b8_20260715/README.md)
 covers 0.4B/0.8B, 1.5B/2B, 2.9B/4B, and 7.2B/9B at B1 and B8, prompt
 128/512/2048 and decode 128/512. The strict summary passes 8/8 batch-pairs,

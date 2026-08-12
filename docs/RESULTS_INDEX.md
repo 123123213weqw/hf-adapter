@@ -5,7 +5,7 @@ not replace [`../BENCHMARK.md`](../BENCHMARK.md), the hardware matrix, or raw
 dated artifacts. A row means only that the linked, exact profile has evidence;
 it does not imply an unbounded all-card or all-shape claim.
 
-Last updated: **2026-08-12**. The released baseline was audited at `main`
+Last updated: **2026-08-13**. The released baseline was audited at `main`
 `045bac1b769240facd290e1ac8232e8b1ca39778`.
 
 ## Inference performance and quantization
@@ -29,7 +29,8 @@ Last updated: **2026-08-12**. The released baseline was audited at `main`
 | `4090-hf-best-optimized-v1` | RTX 4090 | Latest 0.4B/1.5B/2.9B/7.2B best-optimized HF versus official FLA/causal-conv Qwen3.5, B1/B8 | Unified 96/96-row contract passes; adjusted Prefill and Decode pass 48/48 each at minima `1.060506x/1.829468x`; 7.2B B1/B8 is complete | [`4090_hf_best_optimized_v1_20260812`](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
 | `5070-b8-qwen` | RTX 5070 Laptop | 1.5B versus Qwen3.5-2B B8 | Full-FLA dense and fp16/W8/W4 gates pass for the measured lane | [`5070_qwen35_full_fla_bsz8_20260714`](../bench/5070_qwen35_full_fla_bsz8_20260714/README.md) |
 | `5070-native-exact` | RTX 5070 Laptop | Native 0.4B/1.5B B1/B2/B4/B8, P128/P512 | Graph+scan prefill, raw recurrent, shape-gated norm/mix and B8 FP16 state pass; negative fusion candidates fail closed | [`5070_max_perf_20260811`](../bench/5070_max_perf_20260811/README.md) |
-| `5090-qwen-matrix` | RTX 5090 | 0.4B-7.2B versus Qwen3.5, B1/B8 | 8/8 model/batch pairs and 144/144 full-FLA cells pass | [`5090_g1h_qwen35_b1_b8_20260715`](../bench/5090_g1h_qwen35_b1_b8_20260715/README.md) |
+| `5090-qwen-best-hf-v2` | RTX 5090 | Qwen3.5 0.8B/2B/4B/9B, B1/B8, P128/512/2048, D128/512 | Reference-only 48/48 official FLA/causal-conv rows pass with fixed per-model StaticCache Graph routes; unified paired table remains pending | [`5090_qwen35_best_optimized_hf_v1_20260813`](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md) |
+| `5090-qwen-matrix` | RTX 5090 | 0.4B-7.2B versus Qwen3.5, B1/B8 | Historical under the superseding protocol; its original 8/8 model/batch pairs and 144/144 full-FLA cells pass remain valid only for that artifact | [`5090_g1h_qwen35_b1_b8_20260715`](../bench/5090_g1h_qwen35_b1_b8_20260715/README.md) |
 | `5090-w4` | RTX 5090 | g1h 1.5B/2.9B/7.2B/13.3B, B1/B8 | All-phase W4 speed, footprint and correctness pass 8/8 | [`5090_bntn_all_models_20260716`](../bench/5090_bntn_all_models_20260716/README.md) |
 | `5090-native-official` | RTX 5090 | Native versus official v3a decode/prefill | 7.2B decode and 2.9B/13.3B 12-cell prefill scopes pass | [`5090_native_official_fp16_production_20260718`](../bench/5090_native_official_fp16_production_20260718/README.md) |
 | `apple-m5` | Apple M5 | Selected MLX/Qwen pairs and W4 | Production-close for the named M5 profiles | [`APPLE_PRODUCTION_CLOSE.md`](hardware/APPLE_PRODUCTION_CLOSE.md) |

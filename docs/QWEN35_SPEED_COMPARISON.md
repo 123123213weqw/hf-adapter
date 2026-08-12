@@ -1,6 +1,6 @@
 # RWKV-7 vs Qwen3.5: Unified HF Fast-Path Benchmark
 
-Updated: **2026-08-12**. [中文版](QWEN35_SPEED_COMPARISON_ZH.md)
+Updated: **2026-08-13**. [中文版](QWEN35_SPEED_COMPARISON_ZH.md)
 
 ## Current status
 
@@ -12,9 +12,12 @@ Those artifacts remain reproducibility history only.
 
 The replacement main table is populated card by card. RTX 4090 completed the
 exact `hf_fast_path_v1` shape contract with the `best_optimized_hf` RWKV lane
-on 2026-08-12: 96/96 rows pass with no fallback. RTX 3090 and RTX 5090 remain
-pending under this superseding protocol. No partial card, backend fallback, or
-legacy result is merged into this table.
+on 2026-08-12: 96/96 rows pass with no fallback. RTX 5090 now has a complete
+48/48 Qwen-only best-optimized HF reference. It is reference-lane eligible,
+but the RTX 5090 unified table remains pending because RWKV was not rerun in
+the same runtime and the reference combines independently optimized Prefill
+and Decode axes. RTX 3090 also remains pending. No partial card, backend
+fallback, or legacy result is merged into the unified table.
 
 ## Fixed protocol (`hf_fast_path_v1`)
 
@@ -40,7 +43,7 @@ three cards have 288 rows. A Qwen-only baseline refresh has 144 rows.
 |---|---:|---|---|---:|---:|---|
 | RTX 4090 | 96/96 | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; Decode Graph on | 48/48 | 48/48 / 48/48 | [immutable artifact](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
 | RTX 3090 | pending | pending | pending | — | — | — |
-| RTX 5090 | pending | pending | pending | — | — | — |
+| RTX 5090 | 48/48 reference; candidate pending | 48/48 pass, no fallback | pending | — | — | [Qwen-only artifact](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md) |
 
 RTX 4090 now clears Qwen in every matched cell. Raw Prefill has
 minimum/median `1.361373x/2.315043x`, and parameter-adjusted Prefill has
@@ -63,6 +66,65 @@ Python, PyTorch+CUDA build, Transformers revision, FLA revision,
 `causal-conv1d` revision, and repository commit. The artifact records the
 runtime lock, `pip freeze`, Docker digest when present, repository commit, and
 SHA256 hashes for model configs and safetensors.
+
+### RTX 5090 Qwen-only best-optimized HF reference v2
+
+The 2026-08-13 artifact completes all 48 dense-FP16 reference cells for
+Qwen3.5 0.8B/2B/4B/9B on one RTX 5090. Every row verifies the official
+Transformers FLA operators and Dao-AILab `causal_conv1d`, with no fallback.
+Prefill uses the eager DynamicCache official path. Decode uses one fixed
+correctness-passing StaticCache CUDA Graph route per model: Inductor
+`max-autotune` for 0.8B/2B and raw CUDA Graph for 4B/9B. The raw graph wrapper
+is a repository benchmark optimization, not an official Qwen graph path.
+
+This is an `independent_best_prefill_and_decode` reference envelope, not a
+continuous end-to-end cache route, TTFT result, or cache-handoff latency. It
+contains no same-runtime RWKV candidate, so it cannot enter the unified RTX
+5090 table or produce RWKV/Qwen ratios. Same-cache eager-versus-Graph cosine
+is at least `0.9999860525` with finite logits and full greedy equality.
+Cross-cache cosine is informational; finite traces, full greedy equality and
+prefill-next-token equality pass.
+
+Rows are ordered by model size, GPU and B1/B8. Throughputs are medians over the
+six Prompt/Decode cells in each model/batch slice. B8 Decode is aggregate
+throughput across eight sequences. Values at or above 100 tok/s use zero
+decimals and lower values use one decimal; the artifact retains full precision
+and all seven timing samples.
+
+| Qwen3.5 | GPU | Batch | Decode route | Cells | Prefill tok/s | Decode tok/s |
+|---|---|---:|---|---:|---:|---:|
+| 0.8B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,467 | 559 |
+| 0.8B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 93,375 | 3,180 |
+| 2B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,177 | 325 |
+| 2B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 50,778 | 2,058 |
+| 4B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,042 | 120 |
+| 4B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 21,808 | 731 |
+| 9B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,461 | 79.2 |
+| 9B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 12,199 | 518 |
+
+For historical scale only, the closest 2026-08-11 RTX 5090 module-call rows
+can be aligned at D128 by taking the median over P128/P512/P2048:
+
+| Qwen3.5 | Batch | Historical module-call tok/s | New optimized tok/s | Historical ratio |
+|---|---:|---:|---:|---:|
+| 0.8B | B1 | 56.7 | 584.4 | 10.31x |
+| 0.8B | B8 | 429.4 | 3,371.2 | 7.85x |
+| 2B | B1 | 56.7 | 334.0 | 5.89x |
+| 2B | B8 | 434.0 | 2,113.5 | 4.87x |
+| 4B | B1 | 41.3 | 122.5 | 2.96x |
+| 4B | B8 | 317.4 | 751.2 | 2.37x |
+| 9B | B1 | 41.7 | 80.1 | 1.92x |
+| 9B | B8 | 318.6 | 528.8 | 1.66x |
+
+This is not a controlled same-runtime A/B. The historical rows used
+`module_call` plus `DynamicCache`, the repository `fla_triton` convolution
+route, PyTorch 2.11 and 2/5 warmup/runs; the new artifact uses official
+`causal_conv1d`, PyTorch 2.8, 3/7 warmup/runs and fixed StaticCache Graph
+routes. The ratios describe the practical baseline change, not an isolated
+Graph or kernel speedup.
+
+Full evidence:
+[`bench/5090_qwen35_best_optimized_hf_v1_20260813/`](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md).
 
 ### Qwen row acceptance
 
@@ -180,6 +242,9 @@ and the complete 96-row join is in [main_table.jsonl](../bench/4090_hf_best_opti
 Use `prefill_tokps_total` and `decode_tokps_total` for the full-precision
 original throughput.
 
+The new RTX 5090 Qwen-only reference is not substituted into these historical
+joined rows because no same-runtime RWKV candidate exists.
+
 For RTX 4080, the stricter cell-level gate now passes **36/36 adjusted
 Prefill cells and 36/36 adjusted Decode cells**; the full-matrix minima are
 `1.068520x / 1.140700x`.
@@ -265,9 +330,10 @@ FP16 block accumulation improves its local control by `1.422952x-1.436970x`.
 See the
 [immutable evidence](../bench/4090_hf_best_optimized_v1_20260812/README.md).
 
-### RTX 5090 latest-checkpoint strict gate
+### Historical RTX 5090 latest-checkpoint gate (2026-08-11)
 
-The latest RTX 5090 rows use RWKV-7 g1d 0.4B plus the 2026-08-05 g1i
+The historical 2026-08-11 RTX 5090 rows use RWKV-7 g1d 0.4B plus the
+2026-08-05 g1i
 1.5B/2.9B/7.2B checkpoints against official Qwen3.5 0.8B/2B/4B/9B. All 24
 Qwen reference cells verify FLA, Triton causal convolution, live fused
 bindings, and the full-fused contract.
@@ -436,7 +502,8 @@ A complete run reports exit code 0, `pipeline_exit_code.txt=0`,
 | RTX 4090 latest checkpoints | [`bench/run_4090_adjusted_pd.sh`](../bench/run_4090_adjusted_pd.sh) | Three model pairs, B1/B8, P128/512/2048, D128/512; requires adjusted P/D `>1.00x` in all 36 cells |
 | RTX 5070 Laptop | [`bench/run_5070_qwen35_full_fla_bsz8.ps1`](../bench/run_5070_qwen35_full_fla_bsz8.ps1) | PowerShell with `-RwkvModel`, `-QwenModel`, and `-OutDir` |
 | RTX 5090 | [`bench/run_5090_qwen35_full_matrix.sh`](../bench/run_5090_qwen35_full_matrix.sh) | Four model pairs, B1/B8 full matrix |
-| RTX 5090 latest checkpoints | [Commands in the strict-gate evidence](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md#reproduce-the-gate) | Four model pairs, B1/B8, P128/512/2048, D128 |
+| RTX 5090 historical 2026-08-11 checkpoints | [Commands in the strict-gate evidence](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md#reproduce-the-gate) | Four model pairs, B1/B8, P128/512/2048, D128 |
+| RTX 5090 Qwen-only optimized reference v2 | [`bench/run_5090_qwen35_best_optimized_hf.sh`](../bench/run_5090_qwen35_best_optimized_hf.sh) | Run once per Qwen checkpoint; four fixed model routes form the 48-row reference-only matrix |
 
 Each runner verifies the exact GPU, backend bindings, matrix coverage, and
 acceptance gates, and writes `pipeline_exit_code.txt`,

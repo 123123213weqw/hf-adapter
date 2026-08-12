@@ -1,6 +1,6 @@
 # RWKV-7 vs Qwen3.5：统一 HF 快速路径测试协议
 
-更新日期：**2026-08-12**。[English version](QWEN35_SPEED_COMPARISON.md)
+更新日期：**2026-08-13**。[English version](QWEN35_SPEED_COMPARISON.md)
 
 ## 当前状态
 
@@ -11,8 +11,10 @@ FLA，实际也可能绑定仓库 Triton convolution 或静默回退到慢速 Py
 
 新的主表按卡逐张写入。RTX 4090 已于 2026-08-12 使用 RWKV
 `best_optimized_hf` 路线完成严格一致的 `hf_fast_path_v1` 形状协议：96/96
-行通过且没有 fallback；RTX 3090 和 RTX 5090 仍待按新协议重测。不完整卡、
-后端回退和旧结果都不能混入主表。
+行通过且没有 fallback。RTX 5090 现已完成 48/48 行 Qwen-only 最佳优化 HF
+参考线；该产物可以作为 Qwen 参考基线，但 RTX 5090 统一主表仍为待测：RWKV
+尚未在同一运行时重跑，而且该参考线独立选择最快 Prefill 与最快 Decode 路径。
+RTX 3090 也仍为待测。不完整卡、后端回退和旧结果都不能混入统一主表。
 
 ## 固定协议（`hf_fast_path_v1`）
 
@@ -38,7 +40,7 @@ FLA，实际也可能绑定仓库 Triton convolution 或静默回退到慢速 Py
 |---|---:|---|---|---:|---:|---|
 | RTX 4090 | 96/96 | 48/48 通过，无 fallback | 48/48 `best_optimized_hf`；Decode Graph 开启 | 48/48 | 48/48 / 48/48 | [不可变证据](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
 | RTX 3090 | 待测 | 待测 | 待测 | — | — | — |
-| RTX 5090 | 待测 | 待测 | 待测 | — | — | — |
+| RTX 5090 | Qwen 48/48；RWKV 待测 | 48/48 通过，无 fallback | 待测 | — | — | [Qwen-only 产物](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md) |
 
 RTX 4090 现在每一格都超过 Qwen：原始 Prefill 最小值/中位数为
 `1.361373x/2.315043x`，参数校正后为 `1.060506x/1.549011x`；原始 Decode
@@ -58,6 +60,62 @@ RTX 4090 上校正后的 Qwen Decode 中位数为：
 Transformers、FLA、`causal-conv1d` 和仓库提交。产物保存运行时锁、
 `pip freeze`、Docker digest（若存在）、仓库提交以及模型 config/safetensors
 的 SHA256。
+
+### RTX 5090 Qwen-only 最佳优化 HF 参考线 v2
+
+2026-08-13 的 Qwen-only 产物在单张 RTX 5090 上完成 Qwen3.5
+0.8B/2B/4B/9B 的全部 48 个 Dense FP16 参考格。每行均验证 Transformers
+官方 FLA 算子与 Dao-AILab 官方 `causal_conv1d`，没有 fallback。Prefill 使用
+DynamicCache eager 官方路径；Decode 对每个模型固定一条通过正确性门槛的
+StaticCache CUDA Graph 路径：0.8B/2B 使用 Inductor `max-autotune`，
+4B/9B 使用 raw CUDA Graph。raw Graph 包装器是仓库 benchmark 优化，不是
+Qwen 官方 Graph 路径。
+
+该产物采用 `independent_best_prefill_and_decode`，代表 Prefill 和 Decode
+独立最优性能包络，不是同一缓存路径连续执行的端到端请求、TTFT 或缓存交接
+延迟。由于没有同运行时 RWKV candidate，它只能进入 Qwen 参考线，不能把
+RTX 5090 统一主表标记为完成，也不能据此计算 RWKV/Qwen 速度比。same-cache
+eager 对 Graph 的最低 cosine 为 `0.9999860525`，有限性与完整 greedy token
+全部通过；cross-cache cosine 仅作信息记录，其有限性、完整 greedy 和
+prefill-next-token 门槛也全部通过。
+
+行顺序为模型尺寸、显卡、B1/B8。吞吐是每个模型/Batch 下六个 Prompt/Decode
+格的中位数；B8 Decode 是八条序列的合计吞吐。`>=100 tok/s` 显示零位小数，
+`<100 tok/s` 显示一位小数；完整精度和每格七次计时样本均保留在产物中。
+
+| Qwen3.5 | GPU | Batch | Decode 路径 | 格数 | Prefill tok/s | Decode tok/s |
+|---|---|---:|---|---:|---:|---:|
+| 0.8B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,467 | 559 |
+| 0.8B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 93,375 | 3,180 |
+| 2B | RTX 5090 | B1 | `static_cache_inductor_cudagraph` | 6 | 14,177 | 325 |
+| 2B | RTX 5090 | B8 | `static_cache_inductor_cudagraph` | 6 | 50,778 | 2,058 |
+| 4B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,042 | 120 |
+| 4B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 21,808 | 731 |
+| 9B | RTX 5090 | B1 | `static_cache_raw_cudagraph` | 6 | 10,461 | 79.2 |
+| 9B | RTX 5090 | B8 | `static_cache_raw_cudagraph` | 6 | 12,199 | 518 |
+
+仅用于观察历史提升幅度时，可以把 2026-08-11 的 RTX 5090 module-call 行
+对齐到 D128，并对 P128/P512/P2048 取中位数：
+
+| Qwen3.5 | Batch | 历史 module-call tok/s | 新优化 tok/s | 历史提升 |
+|---|---:|---:|---:|---:|
+| 0.8B | B1 | 56.7 | 584.4 | 10.31x |
+| 0.8B | B8 | 429.4 | 3,371.2 | 7.85x |
+| 2B | B1 | 56.7 | 334.0 | 5.89x |
+| 2B | B8 | 434.0 | 2,113.5 | 4.87x |
+| 4B | B1 | 41.3 | 122.5 | 2.96x |
+| 4B | B8 | 317.4 | 751.2 | 2.37x |
+| 9B | B1 | 41.7 | 80.1 | 1.92x |
+| 9B | B8 | 318.6 | 528.8 | 1.66x |
+
+这不是严格的同运行时 A/B。历史行使用逐 token `module_call`、`DynamicCache`、
+仓库 `fla_triton` convolution、PyTorch 2.11 和 2/5 warmup/runs；新产物使用
+官方 `causal_conv1d`、PyTorch 2.8、3/7 warmup/runs 与固定 StaticCache Graph
+路径。因此这些倍数表示实际参考基线的变化，不能表述成单独由 Graph 或某个
+kernel 带来的纯加速比。
+
+完整证据：
+[`bench/5090_qwen35_best_optimized_hf_v1_20260813/`](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md)。
 
 ### Qwen 每行强制验收
 
@@ -158,6 +216,9 @@ tok/s`与`Qwen P / D tok/s`是分别对声明范围内各格吞吐取中位数�
 [main_table.jsonl](../bench/4090_hf_best_optimized_v1_20260812/main_table.jsonl)。全精度原始吞吐字段为
 `prefill_tokps_total` 和 `decode_tokps_total`。
 
+新的 RTX 5090 Qwen-only 参考值不能替换下面的历史配对行，因为不存在同运行时
+RWKV candidate。
+
 RTX 4080 现已通过更严格的逐格门槛：**参数校正 Prefill 36/36、Decode
 36/36 全部超过**，全矩阵最小值为 `1.068520x / 1.140700x`。
 
@@ -240,9 +301,9 @@ Prompt/缓存/greedy 正确性通过，精确显卡 FP16 block accumulation 相�
 control 提升 `1.422952x-1.436970x`。完整数据见
 [不可变证据](../bench/4090_hf_best_optimized_v1_20260812/README.md)。
 
-### RTX 5090 最新检查点严格门槛
+### 历史 RTX 5090 最新检查点门槛（2026-08-11）
 
-最新 RTX 5090 行使用 RWKV-7 g1d 0.4B 和 2026-08-05 g1i
+这组 2026-08-11 历史 RTX 5090 行使用 RWKV-7 g1d 0.4B 和 2026-08-05 g1i
 1.5B/2.9B/7.2B，对照官方 Qwen3.5 0.8B/2B/4B/9B。全部 24 个 Qwen
 参考单元均验证 FLA、Triton causal convolution、实时 fused bindings 和
 full-fused contract。
@@ -407,7 +468,8 @@ Qwen 行显示 full-FLA 优化路径；结果按中位值和两位小数进行�
 | RTX 4090 最新检查点 | [`bench/run_4090_adjusted_pd.sh`](../bench/run_4090_adjusted_pd.sh) | 三个模型对、B1/B8、P128/512/2048、D128/512；强制全部 36 格参数校正 P/D 均 `>1.00x` |
 | RTX 5070 Laptop | [`bench/run_5070_qwen35_full_fla_bsz8.ps1`](../bench/run_5070_qwen35_full_fla_bsz8.ps1) | Windows PowerShell；通过 `-RwkvModel`、`-QwenModel`、`-OutDir` 传路径 |
 | RTX 5090 | [`bench/run_5090_qwen35_full_matrix.sh`](../bench/run_5090_qwen35_full_matrix.sh) | 四个模型对、B1/B8 的完整矩阵 |
-| RTX 5090 最新检查点 | [严格门槛证据中的命令](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md#reproduce-the-gate) | 四个模型对、B1/B8、P128/512/2048、D128 |
+| RTX 5090 历史 2026-08-11 检查点 | [严格门槛证据中的命令](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md#reproduce-the-gate) | 四个模型对、B1/B8、P128/512/2048、D128 |
+| RTX 5090 Qwen-only 最佳优化参考线 v2 | [`bench/run_5090_qwen35_best_optimized_hf.sh`](../bench/run_5090_qwen35_best_optimized_hf.sh) | 每个 Qwen checkpoint 各运行一次；四条固定模型路径组成 48 行 reference-only 矩阵 |
 
 这些入口都会检查精确 GPU、后端绑定、矩阵覆盖和验收门槛，并在输出目录生成
 `pipeline_exit_code.txt`、`matrix_failures.txt`、`summary*.json` 和完整日志。
