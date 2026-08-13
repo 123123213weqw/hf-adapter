@@ -7,6 +7,7 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
 OUT_DIR="${OUT_DIR:-${1:-}}"
 CACHE_ROOT="${CACHE_ROOT:-}"
 CUDA_TOOLKIT_VIEW="${CUDA_TOOLKIT_VIEW:-}"
+CUDA_COMPONENT_INCLUDE="${CUDA_COMPONENT_INCLUDE:-}"
 REPOSITORY_COMMIT="${REPOSITORY_COMMIT:-}"
 RWKV_04_MODEL="${RWKV_04_MODEL:-}"
 RWKV_15_MODEL="${RWKV_15_MODEL:-}"
@@ -15,8 +16,8 @@ QWEN_08_MODEL="${QWEN_08_MODEL:-}"
 QWEN_2_MODEL="${QWEN_2_MODEL:-}"
 QWEN_4_MODEL="${QWEN_4_MODEL:-}"
 
-if [[ -z "${OUT_DIR}" || -z "${CACHE_ROOT}" || -z "${CUDA_TOOLKIT_VIEW}" || -z "${REPOSITORY_COMMIT}" ]]; then
-  echo "OUT_DIR, CACHE_ROOT, CUDA_TOOLKIT_VIEW and REPOSITORY_COMMIT are required" >&2
+if [[ -z "${OUT_DIR}" || -z "${CACHE_ROOT}" || -z "${CUDA_TOOLKIT_VIEW}" || -z "${CUDA_COMPONENT_INCLUDE}" || -z "${REPOSITORY_COMMIT}" ]]; then
+  echo "OUT_DIR, CACHE_ROOT, CUDA_TOOLKIT_VIEW, CUDA_COMPONENT_INCLUDE and REPOSITORY_COMMIT are required" >&2
   exit 2
 fi
 for name in RWKV_04_MODEL RWKV_15_MODEL RWKV_29_MODEL QWEN_08_MODEL QWEN_2_MODEL QWEN_4_MODEL; do
@@ -31,6 +32,7 @@ ROOT="$(realpath -e -- "${ROOT}")"
 OUT_DIR="$(realpath -m -- "${OUT_DIR}")"
 CACHE_ROOT="$(realpath -m -- "${CACHE_ROOT}")"
 CUDA_TOOLKIT_VIEW="$(realpath -e -- "${CUDA_TOOLKIT_VIEW}")"
+CUDA_COMPONENT_INCLUDE="$(realpath -e -- "${CUDA_COMPONENT_INCLUDE}")"
 if [[ "${PYTHON_BIN}" == */* ]]; then
   python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"
   PYTHON_BIN="${python_dir}/$(basename -- "${PYTHON_BIN}")"
@@ -51,7 +53,7 @@ for protected in "${ROOT}" "${RWKV_04_MODEL}" "${RWKV_15_MODEL}" "${RWKV_29_MODE
   case "${protected}/" in "${CACHE_ROOT}/"*) echo "CACHE_ROOT contains protected input ${protected}" >&2; exit 2;; esac
 done
 
-export ROOT PYTHON_BIN REPOSITORY_COMMIT CUDA_TOOLKIT_VIEW
+export ROOT PYTHON_BIN REPOSITORY_COMMIT CUDA_TOOLKIT_VIEW CUDA_COMPONENT_INCLUDE
 export RWKV_04_MODEL RWKV_15_MODEL RWKV_29_MODEL
 OUT_DIR="${OUT_DIR}" CACHE_ROOT="${CACHE_ROOT}/rwkv" \
   bash "${ROOT}/bench/run_4080_rwkv_paired_pd_v1.sh"

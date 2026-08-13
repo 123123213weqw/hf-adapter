@@ -16,6 +16,8 @@ def test_formal_runner_locks_paths_runtime_and_append_never() -> None:
         "3.12.2",
         "2.11.0+cu130",
         "TORCH_CUDA_ARCH_LIST=8.9",
+        "CUDA_COMPONENT_INCLUDE lacks cusparse.h",
+        '"CPATH=${CUDA_COMPONENT_INCLUDE}"',
         "TORCHINDUCTOR_CACHE_DIR",
         "--model 4080 --name",
         "model_hashes.after.sha256",
@@ -43,6 +45,10 @@ def test_formal_runner_captures_complete_matrix_and_long_correctness() -> None:
 
 
 def test_formal_runner_locks_exact_ada_routes_without_sm120_pollution() -> None:
+    assert '"RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=${require_extension}"' in SCRIPT
+    assert '"RWKV7_NATIVE_GRAPH_RKV_POLICY=${rkv_policy}"' in SCRIPT
+    assert 'if [[ "${batch}" == 1 ]]; then require_extension=1; fi' in SCRIPT
+    assert 'if [[ "${batch}" == 1 || "${tag}" == 0p4 || "${tag}" == 1p5 ]]' in SCRIPT
     assert '"RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=1"' in SCRIPT
     assert '"RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0"' in SCRIPT
     assert '"RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0"' in SCRIPT

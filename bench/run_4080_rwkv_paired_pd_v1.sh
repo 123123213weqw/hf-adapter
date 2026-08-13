@@ -10,12 +10,13 @@ RWKV_04_MODEL="${RWKV_04_MODEL:-}"
 RWKV_15_MODEL="${RWKV_15_MODEL:-}"
 RWKV_29_MODEL="${RWKV_29_MODEL:-}"
 CUDA_TOOLKIT_VIEW="${CUDA_TOOLKIT_VIEW:-}"
+CUDA_COMPONENT_INCLUDE="${CUDA_COMPONENT_INCLUDE:-}"
 CACHE_ROOT="${CACHE_ROOT:-}"
 PROTOCOL="qwen35_paired_pd_v1"
 CORRECTNESS_PROTOCOL="rwkv_native_graph_fla_correctness_4080_v1"
 
-if [[ -z "${OUT_DIR}" || -z "${CACHE_ROOT}" || -z "${CUDA_TOOLKIT_VIEW}" || -z "${RWKV_04_MODEL}" || -z "${RWKV_15_MODEL}" || -z "${RWKV_29_MODEL}" ]]; then
-  echo "OUT_DIR, CACHE_ROOT, CUDA_TOOLKIT_VIEW and all three RWKV model paths are required" >&2
+if [[ -z "${OUT_DIR}" || -z "${CACHE_ROOT}" || -z "${CUDA_TOOLKIT_VIEW}" || -z "${CUDA_COMPONENT_INCLUDE}" || -z "${RWKV_04_MODEL}" || -z "${RWKV_15_MODEL}" || -z "${RWKV_29_MODEL}" ]]; then
+  echo "OUT_DIR, CACHE_ROOT, CUDA_TOOLKIT_VIEW, CUDA_COMPONENT_INCLUDE and all three RWKV model paths are required" >&2
   exit 2
 fi
 if [[ ! "${REPOSITORY_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]]; then
@@ -29,6 +30,11 @@ RWKV_04_MODEL="$(realpath -e -- "${RWKV_04_MODEL}")"
 RWKV_15_MODEL="$(realpath -e -- "${RWKV_15_MODEL}")"
 RWKV_29_MODEL="$(realpath -e -- "${RWKV_29_MODEL}")"
 CUDA_TOOLKIT_VIEW="$(realpath -e -- "${CUDA_TOOLKIT_VIEW}")"
+CUDA_COMPONENT_INCLUDE="$(realpath -e -- "${CUDA_COMPONENT_INCLUDE}")"
+[[ -f "${CUDA_COMPONENT_INCLUDE}/cusparse.h" ]] || {
+  echo "CUDA_COMPONENT_INCLUDE lacks cusparse.h: ${CUDA_COMPONENT_INCLUDE}" >&2
+  exit 2
+}
 CACHE_ROOT="$(realpath -m -- "${CACHE_ROOT}")"
 if [[ "${PYTHON_BIN}" == */* ]]; then
   python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"
@@ -88,6 +94,7 @@ COMMON_ENV=(
   "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" "TORCH_CUDA_ARCH_LIST=8.9"
   "HF_HUB_OFFLINE=1" "TRANSFORMERS_OFFLINE=1" "TOKENIZERS_PARALLELISM=false"
   "CUDA_HOME=${CUDA_TOOLKIT_VIEW}" "LD_LIBRARY_PATH=${CUDA_TOOLKIT_VIEW}/lib64"
+  "CPATH=${CUDA_COMPONENT_INCLUDE}"
   "XDG_CACHE_HOME=${CACHE_ROOT}" "HF_HOME=${CACHE_ROOT}/huggingface"
   "TORCHINDUCTOR_CACHE_DIR=${CACHE_ROOT}/torchinductor" "TRITON_CACHE_DIR=${CACHE_ROOT}/triton"
   "REPOSITORY_COMMIT=${REPOSITORY_COMMIT}"
@@ -139,11 +146,18 @@ hash_models "${MODEL_HASHES}"
 
 run_native_lane() {
   local tag="$1" pair="$2" size="$3" model="$4" batch="$5"
+  local require_extension=0 rkv_policy=manual
+  if [[ "${batch}" == 1 ]]; then require_extension=1; fi
+  if [[ "${batch}" == 1 || "${tag}" == 0p4 || "${tag}" == 1p5 ]]; then
+    rkv_policy=vkwr_auto
+  fi
   local result="${OUT_DIR}/rwkv_${tag}_b${batch}.jsonl"
   local probe="${OUT_DIR}/decode_correctness_${tag}_b${batch}_native.pt"
   local log="${OUT_DIR}/logs/rwkv_${tag}_b${batch}.log"
   env -i "${COMMON_ENV[@]}" \
     "RWKV7_FAST_TOKEN_BACKEND=native_graph" "RWKV7_NATIVE_MODEL_BACKEND=native_graph" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=${require_extension}" \
+    "RWKV7_NATIVE_GRAPH_RKV_POLICY=${rkv_policy}" \
     "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=1" "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0" \
     "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0" \
     "${PYTHON_BIN}" "${ROOT}/bench/bench_cross_model_speed_resident.py" \
@@ -168,6 +182,7 @@ run_fla_reference() {
   env -i "${COMMON_ENV[@]}" \
     "RWKV7_FAST_TOKEN_BACKEND=fla" "RWKV7_NATIVE_MODEL_BACKEND=eager" "RWKV7_NATIVE_MODEL=0" \
     "RWKV7_FAST_PREFILL=0" "RWKV7_NATIVE_PREFILL_GRAPH=0" "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=0" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=0" "RWKV7_NATIVE_GRAPH_RKV_POLICY=manual" \
     "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0" "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0" \
     "TORCHDYNAMO_DISABLE=1" "TORCH_COMPILE_DISABLE=1" \
     "${PYTHON_BIN}" "${ROOT}/bench/bench_cross_model_speed_resident.py" \
@@ -202,7 +217,7 @@ for spec in \
 done
 
 env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" - "${OUT_DIR}" "${CANDIDATE}" "${CANDIDATE_SHA}" "${CORRECTNESS_MANIFEST}" "${ROUTE_MANIFEST}" "${MODEL_HASHES}" "${RUNTIME_LOCK}" "${SYSTEM_CSV}" "${REPOSITORY_COMMIT}" "${CACHE_ROOT}" <<'PY'
-import hashlib, json, sys
+import hashlib, json, os, sys
 from pathlib import Path
 out, candidate, sidecar, correctness, routes, model_hashes, runtime, system = map(Path, sys.argv[1:9])
 commit=sys.argv[9]; cache_root=str(Path(sys.argv[10]).resolve())
@@ -224,11 +239,11 @@ for tag,pair,size in specs:
     fla_probe=out/f"decode_correctness_{tag}_b{batch}_fla.pt"
     comparison=out/f"decode_correctness_{tag}_b{batch}_compare.json"
     entries.append({"model_pair":pair,"model_size_label":size,"model_path":target[0]["model_id_or_path"],"batch_size":batch,"prompt_tokens":2048,"decode_tokens":512,"probe_tokens":512,"fla_reference":{"row":artifact(fla_row),"probe":artifact(fla_probe)},"native_candidate":{"row":artifact(native_row),"probe":artifact(native_probe),"source_lane":artifact(lane),"source_cell":{"batch_size":batch,"prompt_tokens":2048,"decode_tokens":512}},"comparison":artifact(comparison)})
-    lanes.append({"model_pair":pair,"batch_size":batch,"artifact":artifact(lane),"rows":6,"probe_cell":[batch,2048,512]})
+    lanes.append({"model_pair":pair,"batch_size":batch,"artifact":artifact(lane),"rows":6,"probe_cell":[batch,2048,512],"ada_wagv_lora_require_extension":batch==1,"rkv_policy":"vkwr_auto" if batch==1 or tag in {"0p4","1p5"} else "manual"})
 candidate.write_text("".join(json.dumps(row)+"\n" for row in rows))
 candidate_digest=sha(candidate); sidecar.write_text(f"{candidate_digest}  {candidate.name}\n")
 correctness.write_text(json.dumps({"schema_version":1,"protocol":"rwkv_native_graph_fla_correctness_4080_v1","benchmark_repository_commit":commit,"model_hashes_sha256":sha(model_hashes),"runtime":artifact(runtime),"coverage":{"models":3,"batch_sizes":[1,8],"entries":6,"baseline_fresh_gpu_processes":6,"candidate_additional_gpu_processes":0,"candidate_formal_lane_processes":6,"prompt_tokens":2048,"decode_tokens":512,"probe_tokens":512},"reference_contract":{"rwkv_implementation":"wrapper_repo","RWKV7_FAST_TOKEN_BACKEND":"fla","RWKV7_NATIVE_MODEL_BACKEND":"eager","RWKV7_FAST_PREFILL":"0","RWKV7_NATIVE_PREFILL_GRAPH":"0","TORCHDYNAMO_DISABLE":"1","TORCH_COMPILE_DISABLE":"1","performance_role":False},"gates":{"greedy_tokens":"exact_all_512","prompt_logits_min_row_cosine":0.9999,"final_logits_min_row_cosine":0.9999,"decode_logits_all_finite":True,"b8_distinct_prompts":True},"entries":entries},indent=2)+"\n")
-routes.write_text(json.dumps({"schema_version":1,"protocol":"qwen35_paired_pd_v1","benchmark_repository_commit":commit,"repository_clean_pre_and_post":True,"candidate_rows":36,"candidate_result":artifact(candidate),"candidate_sha256_sidecar":artifact(sidecar),"model_hash_contract":{"algorithm":"sha256","scope":"every recursive regular file","before":artifact(model_hashes)},"native_graph_fla_correctness_manifest":artifact(correctness),"runtime_lock":artifact(runtime),"pip_freeze":artifact(out/"pip-freeze.txt"),"system_identity":artifact(system),"forced_environment":{"CUDA_VISIBLE_DEVICES":"0","CUDA_DEVICE_ORDER":"PCI_BUS_ID","PYTHONPATH":str(Path.cwd().resolve()),"PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True","TORCH_CUDA_ARCH_LIST":"8.9","HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","TOKENIZERS_PARALLELISM":"false","RWKV7_FAST_TOKEN_BACKEND":"native_graph","RWKV7_NATIVE_MODEL_BACKEND":"native_graph","RWKV7_NATIVE_PREFILL_GRAPH":"unset_exact_card_policy","RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM":"1","RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G":"0","RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN":"0","CACHE_ROOT":cache_root},"lanes":lanes},indent=2)+"\n")
+routes.write_text(json.dumps({"schema_version":1,"protocol":"qwen35_paired_pd_v1","benchmark_repository_commit":commit,"repository_clean_pre_and_post":True,"candidate_rows":36,"candidate_result":artifact(candidate),"candidate_sha256_sidecar":artifact(sidecar),"model_hash_contract":{"algorithm":"sha256","scope":"every recursive regular file","before":artifact(model_hashes)},"native_graph_fla_correctness_manifest":artifact(correctness),"runtime_lock":artifact(runtime),"pip_freeze":artifact(out/"pip-freeze.txt"),"system_identity":artifact(system),"forced_environment":{"CUDA_VISIBLE_DEVICES":"0","CUDA_DEVICE_ORDER":"PCI_BUS_ID","PYTHONPATH":str(Path.cwd().resolve()),"PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True","TORCH_CUDA_ARCH_LIST":"8.9","CPATH":str(Path(os.environ["CPATH"]).resolve()),"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","TOKENIZERS_PARALLELISM":"false","RWKV7_FAST_TOKEN_BACKEND":"native_graph","RWKV7_NATIVE_MODEL_BACKEND":"native_graph","RWKV7_NATIVE_PREFILL_GRAPH":"unset_exact_card_policy","RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION":"1_for_B1_0_for_B8","RWKV7_NATIVE_GRAPH_RKV_POLICY":"vkwr_auto_except_2p9_B8_manual","RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM":"1","RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G":"0","RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN":"0","CACHE_ROOT":cache_root},"lanes":lanes},indent=2)+"\n")
 PY
 
 hash_models "${MODEL_HASHES_AFTER}"

@@ -1179,6 +1179,7 @@ def ada_wagv_lora(
     sigmoid_a: bool = False,
     compute_v: bool = True,
     force_fallback: bool = False,
+    require_extension: bool = False,
 ) -> tuple[Any, Any, Any, Any]:
     """Return grouped W/A/G/V outputs for layer>0 decode.
 
@@ -1211,6 +1212,13 @@ def ada_wagv_lora(
         and _is_small_row_cuda_device(xw2.device)
     )
     extension = _load_extension(xw2.device) if valid else None
+    if require_extension and extension is None:
+        detail = ada_wagv_lora_build_error(xw2.device)
+        raise RuntimeError(
+            "Ada W/A/G/V extension was required for native_graph decode, "
+            "but its exact device/dtype/layout/build contract was not satisfied; "
+            f"fallback is forbidden; build_error={detail!r}"
+        )
     if extension is None:
         if compute_v:
             outputs = _fallback(

@@ -100,8 +100,11 @@ def candidate_row(pair: str, batch: int, prompt: int, decode: int) -> dict:
     }[pair]
     block = (hidden, layer_count, batch, prompt) in {
         (1024, 24, 8, 512),
+        (1024, 24, 8, 2048),
         (2048, 24, 8, 512),
+        (2048, 24, 8, 2048),
         (2560, 32, 1, 512),
+        (2560, 32, 1, 2048),
     }
     result = {
         "axis": "qwen35_cross_model_speed",
@@ -141,6 +144,22 @@ def candidate_row(pair: str, batch: int, prompt: int, decode: int) -> dict:
         "prefill_effective_backend": "native_prefill_graph",
         "prefill_backend_effective": "native_prefill_graph",
         "active_parameter_count": PARAMETERS[pair][0],
+        "rwkv_native_graph_ada_wagv_lora_extension_requested": batch == 1,
+        "rwkv_native_graph_ada_wagv_lora_extension_selected": batch == 1,
+        "rwkv_native_graph_ada_wagv_lora_extension_effective": batch == 1,
+        "rwkv_native_graph_ada_wagv_lora_extension_selected_layers": (
+            list(range(layers)) if batch == 1 else []
+        ),
+        "rwkv_native_graph_ada_wagv_lora_extension_effective_layers": (
+            list(range(layers)) if batch == 1 else []
+        ),
+        "rwkv_native_graph_ada_wagv_lora_extension_effective_layer_count": (
+            layers if batch == 1 else 0
+        ),
+        "rwkv_native_graph_ada_wagv_lora_extension_full_model_effective": batch == 1,
+        "rwkv_native_graph_rkv_policy": (
+            "manual" if pair == PAIRS[2] and batch == 8 else "vkwr_auto"
+        ),
         "rwkv_native_graph_ada_wagv_bmm_requested": True,
         "rwkv_native_graph_ada_wagv_bmm_selected": batch == 8,
         "rwkv_native_graph_ada_wagv_bmm_effective": batch == 8,

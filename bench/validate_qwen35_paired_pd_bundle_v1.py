@@ -877,19 +877,22 @@ def validate_bundle(
         "PYTHONPATH": forced.get("PYTHONPATH"),
         "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
         "TORCH_CUDA_ARCH_LIST": "8.9",
+        "CPATH": forced.get("CPATH"),
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "TOKENIZERS_PARALLELISM": "false",
         "RWKV7_FAST_TOKEN_BACKEND": "native_graph",
         "RWKV7_NATIVE_MODEL_BACKEND": "native_graph",
         "RWKV7_NATIVE_PREFILL_GRAPH": "unset_exact_card_policy",
+        "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION": "1_for_B1_0_for_B8",
+        "RWKV7_NATIVE_GRAPH_RKV_POLICY": "vkwr_auto_except_2p9_B8_manual",
         "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM": "1",
         "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G": "0",
         "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN": "0",
         "CACHE_ROOT": forced.get("CACHE_ROOT"),
     }
     _expect("candidate forced_environment", forced, expected_forced, errors)
-    for field in ("PYTHONPATH", "CACHE_ROOT"):
+    for field in ("PYTHONPATH", "CPATH", "CACHE_ROOT"):
         value = _recorded_path(forced.get(field))
         if value is None or not value.startswith("/"):
             errors.append(f"candidate {field} must be absolute")
@@ -918,6 +921,19 @@ def validate_bundle(
             f"candidate lane {key}:probe",
             lane.get("probe_cell"),
             [key[1], 2048, 512],
+            errors,
+        )
+        _expect(
+            f"candidate lane {key}:extension",
+            lane.get("ada_wagv_lora_require_extension"),
+            key[1] == 1,
+            errors,
+        )
+        expected_rkv = "manual" if key == (PAIRS[2], 8) else "vkwr_auto"
+        _expect(
+            f"candidate lane {key}:rkv_policy",
+            lane.get("rkv_policy"),
+            expected_rkv,
             errors,
         )
         path = _artifact(

@@ -170,6 +170,10 @@ def _bundle(tmp_path: Path) -> dict[str, object]:
                     "artifact": _artifact(lane_path),
                     "rows": 6,
                     "probe_cell": [batch, 2048, 512],
+                    "ada_wagv_lora_require_extension": batch == 1,
+                    "rkv_policy": (
+                        "manual" if pair == PAIRS[2] and batch == 8 else "vkwr_auto"
+                    ),
                 }
             )
 
@@ -279,12 +283,15 @@ def _bundle(tmp_path: Path) -> dict[str, object]:
                 "PYTHONPATH": "/repo",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
                 "TORCH_CUDA_ARCH_LIST": "8.9",
+                "CPATH": "/cuda-components/include",
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
                 "TOKENIZERS_PARALLELISM": "false",
                 "RWKV7_FAST_TOKEN_BACKEND": "native_graph",
                 "RWKV7_NATIVE_MODEL_BACKEND": "native_graph",
                 "RWKV7_NATIVE_PREFILL_GRAPH": "unset_exact_card_policy",
+                "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION": "1_for_B1_0_for_B8",
+                "RWKV7_NATIVE_GRAPH_RKV_POLICY": "vkwr_auto_except_2p9_B8_manual",
                 "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM": "1",
                 "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G": "0",
                 "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN": "0",

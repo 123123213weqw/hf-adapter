@@ -160,8 +160,11 @@ def _expected_accumulation(pair: str, batch: int, prompt: int) -> tuple[bool, bo
     }[pair]
     block_only = {
         (1024, 24, 8, 512),
+        (1024, 24, 8, 2048),
         (2048, 24, 8, 512),
+        (2048, 24, 8, 2048),
         (2560, 32, 1, 512),
+        (2560, 32, 1, 2048),
     }
     block = (hidden, layers, batch, prompt) in block_only
     return (not block, block)
@@ -216,6 +219,26 @@ def _validate_candidate_row(
         errors.append(f"{row.get('_source', '<row>')}: unexpected B/P/D={shape!r}")
         return
     batch, prompt, decode = (int(value) for value in shape)
+    expected_rkv_policy = (
+        "manual" if pair == PAIRS[2] and batch == 8 else "vkwr_auto"
+    )
+    _require(row, "rwkv_native_graph_rkv_policy", expected_rkv_policy, errors)
+    extension_layers = list(range(layer_count)) if batch == 1 else []
+    for suffix, expected in (
+        ("requested", batch == 1),
+        ("selected", batch == 1),
+        ("effective", batch == 1),
+        ("selected_layers", extension_layers),
+        ("effective_layers", extension_layers),
+        ("effective_layer_count", len(extension_layers)),
+        ("full_model_effective", batch == 1),
+    ):
+        _require(
+            row,
+            f"rwkv_native_graph_ada_wagv_lora_extension_{suffix}",
+            expected,
+            errors,
+        )
     _require(row, "rwkv_native_graph_ada_wagv_bmm_requested", True, errors)
     expected_layers = list(range(layer_count)) if batch == 8 else []
     for suffix, expected in (

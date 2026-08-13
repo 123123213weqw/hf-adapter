@@ -2454,6 +2454,14 @@ def validate_qwen_result_contract(
 
 
 _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS = (
+    "ada_wagv_lora_extension_requested",
+    "ada_wagv_lora_extension_selected",
+    "ada_wagv_lora_extension_effective",
+    "ada_wagv_lora_extension_selected_layers",
+    "ada_wagv_lora_extension_effective_layers",
+    "ada_wagv_lora_extension_effective_layer_count",
+    "ada_wagv_lora_extension_full_model_effective",
+    "rkv_policy",
     "ada_wagv_bmm_requested",
     "ada_wagv_bmm_selected",
     "ada_wagv_bmm_effective",

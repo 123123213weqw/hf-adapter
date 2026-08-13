@@ -12,6 +12,12 @@ import torch.nn.functional as F
 
 from .kernel_policy import current_kernel_policy, env_flag
 
+try:
+    from .ada_lora import ada_wagv_lora_available, ada_wagv_lora_build_error
+except Exception:  # pragma: no cover - optional CUDA extension
+    ada_wagv_lora_available = None
+    ada_wagv_lora_build_error = None
+
 if TYPE_CHECKING:
     from .native_model import NativeRWKV7Cache, NativeRWKV7ForCausalLM
 
@@ -20,6 +26,7 @@ try:
         _block_ip,
         _block_ip_batched,
         _native_graph_ada_wagv_bmm_requested,
+        _native_graph_rkv_policy,
         _native_graph_sm120_compiled_ffn_requested,
         _native_graph_sm120_wagv_bmm_g_requested,
         _native_graph_linear_dispatch,
@@ -31,6 +38,7 @@ except Exception:  # pragma: no cover - optional CUDA/Triton acceleration
     _block_ip = None
     _block_ip_batched = None
     _native_graph_ada_wagv_bmm_requested = None
+    _native_graph_rkv_policy = None
     _native_graph_sm120_compiled_ffn_requested = None
     _native_graph_sm120_wagv_bmm_g_requested = None
     _native_graph_linear_dispatch = None
@@ -211,6 +219,36 @@ class NativeGraphRunner:
         if self.device.type != "cuda":
             raise RuntimeError("native_graph requires model weights on CUDA")
         self.dtype = base.embeddings.weight.dtype
+        self.ada_wagv_lora_extension_required = env_flag(
+            "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION", False
+        )
+        self.ada_wagv_lora_extension_available = False
+        self.rkv_policy = (
+            str(_native_graph_rkv_policy())
+            if _native_graph_rkv_policy is not None
+            else "unavailable"
+        )
+        if self.ada_wagv_lora_extension_required:
+            if self.batch_size != 1:
+                raise RuntimeError(
+                    "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=1 "
+                    "is restricted to the exact B1 route"
+                )
+            available = bool(
+                ada_wagv_lora_available is not None
+                and ada_wagv_lora_available(self.device, build=True)
+            )
+            if not available:
+                detail = (
+                    ada_wagv_lora_build_error(self.device)
+                    if ada_wagv_lora_build_error is not None
+                    else "extension module unavailable"
+                )
+                raise RuntimeError(
+                    "Ada W/A/G/V extension was required before native CUDA "
+                    f"graph capture, but it could not be built; fallback is forbidden: {detail}"
+                )
+            self.ada_wagv_lora_extension_available = True
         self.hidden = int(owner.config.hidden_size)
         self.attention_hidden = int(
             getattr(owner.config, "attention_hidden_size", packs[0][1] * packs[0][2])
@@ -651,11 +689,27 @@ class NativeGraphRunner:
             if sm120_compiled_ffn_preparation_stats is not None
             else {}
         )
+        extension_required = bool(
+            getattr(self, "ada_wagv_lora_extension_required", False)
+        )
+        extension_available = bool(
+            getattr(self, "ada_wagv_lora_extension_available", False)
+        )
+        extension_layers = list(range(self.num_layers)) if extension_required else []
+        extension_effective = bool(extension_required and extension_available)
         return {
             "copy_from_cache_calls": int(self.copy_from_cache_calls),
             "copy_from_cache_fast_skips": int(self.copy_from_cache_fast_skips),
             "bind_cache_calls": int(self.bind_cache_calls),
             "bind_cache_fast_skips": int(self.bind_cache_fast_skips),
+            "ada_wagv_lora_extension_requested": extension_required,
+            "ada_wagv_lora_extension_selected": extension_effective,
+            "ada_wagv_lora_extension_effective": extension_effective,
+            "ada_wagv_lora_extension_selected_layers": extension_layers,
+            "ada_wagv_lora_extension_effective_layers": extension_layers,
+            "ada_wagv_lora_extension_effective_layer_count": len(extension_layers),
+            "ada_wagv_lora_extension_full_model_effective": extension_effective,
+            "rkv_policy": str(getattr(self, "rkv_policy", "unavailable")),
             "ada_wagv_bmm_requested": bool(self.ada_wagv_bmm_requested),
             "ada_wagv_bmm_selected": bool(selected_layers),
             "ada_wagv_bmm_effective": bool(effective_layers),
