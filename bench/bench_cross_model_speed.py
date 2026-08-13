@@ -2457,6 +2457,8 @@ _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS = (
     "ada_wagv_bmm_requested",
     "ada_wagv_bmm_selected",
     "ada_wagv_bmm_effective",
+    "ada_wagv_bmm_selected_layers",
+    "ada_wagv_bmm_effective_layers",
     "ada_wagv_bmm_effective_layer_count",
     "ada_wagv_bmm_full_model_effective",
     "sm120_wagv_bmm_g_requested",

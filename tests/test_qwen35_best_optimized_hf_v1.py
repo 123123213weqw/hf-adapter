@@ -144,6 +144,53 @@ def test_complete_best_optimized_qwen_matrix_passes() -> None:
     assert summary["unified_main_table_eligible"] is False
 
 
+def test_card_local_three_pair_reference_subset_passes_fail_closed() -> None:
+    expected_pairs = tuple(list(PAIRS)[:3])
+    rows = [item for item in complete_rows() if item["model_pair"] in expected_pairs]
+    for item in rows:
+        item["device"] = "NVIDIA GeForce RTX 4080"
+    summary = validate_matrix(
+        rows,
+        expected_device="NVIDIA GeForce RTX 4080",
+        expected_pairs=expected_pairs,
+    )
+    assert summary["status"] == "pass"
+    assert summary["reference_rows"] == 36
+    assert summary["expected_rows"] == 36
+    assert summary["expected_model_pairs"] == list(expected_pairs)
+    assert set(summary["decode_routes_by_model"]) == {
+        "0.8b",
+        "2b",
+        "4b",
+    }
+
+    summary = validate_matrix(
+        rows[:-1],
+        expected_device="NVIDIA GeForce RTX 4080",
+        expected_pairs=expected_pairs,
+    )
+    assert summary["status"] == "fail"
+    assert any("missing cells" in error for error in summary["errors"])
+
+
+def test_reference_subset_rejects_unrequested_fourth_pair() -> None:
+    expected_pairs = tuple(list(PAIRS)[:3])
+    rows = [item for item in complete_rows() if item["model_pair"] in expected_pairs]
+    rows[0] = next(
+        item for item in complete_rows() if item["model_pair"] not in expected_pairs
+    )
+    summary = validate_matrix(rows, expected_pairs=expected_pairs)
+    assert summary["status"] == "fail"
+    assert any("missing cells" in error for error in summary["errors"])
+    assert any("extra cells" in error for error in summary["errors"])
+
+
+def test_reference_subset_rejects_an_empty_pair_contract() -> None:
+    summary = validate_matrix([], expected_pairs=())
+    assert summary["status"] == "fail"
+    assert any("must not be empty" in error for error in summary["errors"])
+
+
 def test_reduce_overhead_rows_are_valid_when_all_graph_gates_pass() -> None:
     rows = complete_rows()
     for item in rows:

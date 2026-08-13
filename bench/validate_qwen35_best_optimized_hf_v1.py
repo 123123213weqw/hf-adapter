@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the 48-row Qwen3.5 best-optimized HF reference matrix."""
+"""Validate a complete card-local Qwen3.5 best-optimized HF reference matrix."""
 from __future__ import annotations
 
 import argparse
@@ -313,11 +313,25 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
 
 
 def validate_matrix(
-    rows: list[dict[str, Any]], *, expected_device: str = ""
+    rows: list[dict[str, Any]],
+    *,
+    expected_device: str = "",
+    expected_pairs: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
-    if len(rows) != 48:
-        errors.append(f"reference row count={len(rows)}, expected 48")
+    selected_pairs = (
+        tuple(expected_pairs) if expected_pairs is not None else tuple(PAIRS)
+    )
+    if not selected_pairs:
+        errors.append("expected model pairs must not be empty")
+    unknown_pairs = sorted(set(selected_pairs) - set(PAIRS))
+    if unknown_pairs:
+        errors.append(f"unknown expected model pairs: {unknown_pairs}")
+    if len(set(selected_pairs)) != len(selected_pairs):
+        errors.append("expected model pairs contain duplicates")
+    expected_rows = len(selected_pairs) * len(EXPECTED_SHAPES)
+    if len(rows) != expected_rows:
+        errors.append(f"reference row count={len(rows)}, expected {expected_rows}")
     for row in rows:
         _validate_row(row, expected_device, errors)
     repository_commits = sorted(
@@ -333,7 +347,9 @@ def validate_matrix(
             + json.dumps(repository_commits)
         )
 
-    expected_keys = {(pair, *shape) for pair in PAIRS for shape in EXPECTED_SHAPES}
+    expected_keys = {
+        (pair, *shape) for pair in selected_pairs for shape in EXPECTED_SHAPES
+    }
     keys = [
         (
             row.get("model_pair"),
@@ -366,7 +382,9 @@ def validate_matrix(
         )
     compile_modes_by_model: dict[str, list[str] | None] = {}
     decode_routes_by_model: dict[str, list[str]] = {}
-    for pair in PAIRS:
+    for pair in selected_pairs:
+        if pair not in PAIRS:
+            continue
         routes = sorted(
             {
                 str(row.get("qwen_decode_optimization_effective"))
@@ -401,7 +419,8 @@ def validate_matrix(
         "optimization_lane": LANE,
         "status": "pass" if not errors else "fail",
         "reference_rows": len(rows),
-        "expected_rows": 48,
+        "expected_rows": expected_rows,
+        "expected_model_pairs": list(selected_pairs),
         "devices": devices,
         "runtime_fields": list(RUNTIME_FIELDS),
         "runtime_signature_count": len(runtime_signatures),
@@ -427,6 +446,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-results", type=Path, nargs="+", required=True)
     parser.add_argument("--expected-device", default="")
+    parser.add_argument(
+        "--expected-model-pair",
+        action="append",
+        choices=tuple(PAIRS),
+        dest="expected_model_pairs",
+        help=(
+            "Required model pair; repeat to validate a card-local subset. "
+            "The default remains all four reference pairs."
+        ),
+    )
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--reference-table", type=Path, required=True)
     return parser.parse_args()
@@ -435,7 +464,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     rows = read_rows(args.reference_results)
-    summary = validate_matrix(rows, expected_device=args.expected_device)
+    summary = validate_matrix(
+        rows,
+        expected_device=args.expected_device,
+        expected_pairs=args.expected_model_pairs,
+    )
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
