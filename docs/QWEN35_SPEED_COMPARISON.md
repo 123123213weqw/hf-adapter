@@ -12,12 +12,16 @@ Those artifacts remain reproducibility history only.
 
 The replacement main table is populated card by card. RTX 4090 completed the
 exact `hf_fast_path_v1` shape contract with the `best_optimized_hf` RWKV lane
-on 2026-08-12: 96/96 rows pass with no fallback. RTX 5090 now has a complete
-48/48 Qwen-only best-optimized HF reference. It is reference-lane eligible,
-but the RTX 5090 unified table remains pending because RWKV was not rerun in
-the same runtime and the reference combines independently optimized Prefill
-and Decode axes. RTX 3090 also remains pending. No partial card, backend
-fallback, or legacy result is merged into the unified table.
+on 2026-08-12: 96/96 rows pass with no fallback. RTX 5090 now has both the
+immutable 48-row Qwen best-optimized HF reference and a same-runtime 48-row
+RWKV candidate. “Same-runtime” here means the six validator package fields,
+GPU and shape protocol match; the repository commits differ and the captures
+were not interleaved. Their `qwen35_paired_decode_v1` join passes strict
+parameter-adjusted Decode in 48/48 cells. This completes a Decode-only
+subtable, not the full Prefill/Decode main table: the frozen reference combines
+independently optimized axes and no Prefill or continuous-E2E gate is promoted.
+RTX 3090 remains pending. No backend fallback or legacy result is merged into
+the current table.
 
 ## Fixed protocol (`hf_fast_path_v1`)
 
@@ -43,7 +47,7 @@ three cards have 288 rows. A Qwen-only baseline refresh has 144 rows.
 |---|---:|---|---|---:|---:|---|
 | RTX 4090 | 96/96 | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; Decode Graph on | 48/48 | 48/48 / 48/48 | [immutable artifact](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
 | RTX 3090 | pending | pending | pending | — | — | — |
-| RTX 5090 | 48/48 reference; candidate pending | 48/48 pass, no fallback | pending | — | — | [Qwen-only artifact](../bench/5090_qwen35_best_optimized_hf_v1_20260813/README.md) |
+| RTX 5090 | 48 Qwen + 48 RWKV; 48 joined Decode cells | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; Decode Graph on | not gated | 48/48 telemetry / 48/48 strict | [paired Decode artifact](../bench/5090_qwen35_paired_decode_v1_20260813/README.md) |
 
 RTX 4090 now clears Qwen in every matched cell. Raw Prefill has
 minimum/median `1.361373x/2.315043x`, and parameter-adjusted Prefill has
@@ -51,6 +55,14 @@ minimum/median `1.361373x/2.315043x`, and parameter-adjusted Prefill has
 parameter-adjusted Decode has `1.829468x/4.468521x`. The old `native_jit`
 no-Graph matrix is retained as a diagnostic appendix; it is not the primary
 max-performance claim.
+
+The RTX 5090 paired Decode subtable has parameter-adjusted
+minimum/median/maximum `1.029966x/1.409279x/2.063849x`. The weakest cell is
+0.4B/0.8B B1/P128/D128: RWKV reaches 1,125 tok/s versus Qwen at 654 tok/s and
+clears the required RWKV rate by `+2.996552%`. Raw Decode also wins 48/48 at
+minimum/median `1.373660x/1.903882x`, but that is subordinate telemetry rather
+than the acceptance contract. This does not claim model quality, Prefill,
+TTFT, continuous E2E, or cache-handoff latency.
 
 The corrected Qwen Decode medians on RTX 4090 are:
 
@@ -67,6 +79,55 @@ Python, PyTorch+CUDA build, Transformers revision, FLA revision,
 runtime lock, `pip freeze`, Docker digest when present, repository commit, and
 SHA256 hashes for model configs and safetensors.
 
+### RTX 5090 frozen-reference paired Decode v1
+
+The 2026-08-13 paired artifact joins the unchanged Qwen reference with a clean
+commit RWKV capture over all four model pairs, B1/B8,
+P128/P512/P2048 and D128/D512. The validator uses unrounded raw throughput and
+requires
+
+```text
+(RWKV Decode tok/s / Qwen Decode tok/s)
+* (RWKV active parameters / Qwen active parameters) > 1.0
+```
+
+for every cell. It reports 48/48 strict passes, zero errors and
+`paired_decode_table_eligible=true`; `continuous_e2e_eligible=false` remains
+explicit.
+
+Reference and candidate were captured separately at different repository
+commits, not as an interleaved A/B. The validator proves that the six package
+runtime fields, exact GPU and shape protocol match. Formal B8 timing replicates
+one prompt eight times; only the independent correctness probes use eight
+distinct prompts.
+
+| RWKV / Qwen | Batch | Cells | Adjusted Decode minimum | Adjusted Decode median |
+|---|---:|---:|---:|---:|
+| 0.4B / 0.8B | B1 | 6 | `1.029966x` | `1.210827x` |
+| 0.4B / 0.8B | B8 | 6 | `1.040730x` | `1.225006x` |
+| 1.5B / 2B | B1 | 6 | `1.261697x` | `1.369630x` |
+| 1.5B / 2B | B8 | 6 | `1.114947x` | `1.226407x` |
+| 2.9B / 4B | B1 | 6 | `1.708151x` | `1.801785x` |
+| 2.9B / 4B | B8 | 6 | `1.099272x` | `1.196935x` |
+| 7.2B / 9B | B1 | 6 | `1.429633x` | `1.480590x` |
+| 7.2B / 9B | B8 | 6 | `1.266346x` | `1.344888x` |
+
+The two narrow SM120 B8 A/B routes improve 0.4B/1.5B Decode by
+`1.865301x/1.492719x` with exact 512-token greedy traces. All eight independent
+native-graph-versus-FLA checks preserve 512 greedy tokens and finite logits;
+their prompt/final cosine minima are `0.999981999/0.999970913`. The formal
+candidate rows are in
+[`rwkv_candidate.jsonl`](../bench/5090_qwen35_paired_decode_v1_20260813/rwkv_candidate.jsonl),
+the complete joined rows in
+[`paired_decode_table.jsonl`](../bench/5090_qwen35_paired_decode_v1_20260813/paired_decode_table.jsonl),
+and the fail-closed result in
+[`paired_validation.json`](../bench/5090_qwen35_paired_decode_v1_20260813/paired_validation.json).
+
+This result is parameter-adjusted Decode only. Raw Decode 48/48 is retained as
+supporting telemetry; no model-quality, Prefill, TTFT, continuous-E2E or
+cache-handoff-latency conclusion is drawn. Full evidence:
+[`bench/5090_qwen35_paired_decode_v1_20260813/`](../bench/5090_qwen35_paired_decode_v1_20260813/README.md).
+
 ### RTX 5090 Qwen-only best-optimized HF reference v2
 
 The 2026-08-13 artifact completes all 48 dense-FP16 reference cells for
@@ -78,12 +139,13 @@ correctness-passing StaticCache CUDA Graph route per model: Inductor
 is a repository benchmark optimization, not an official Qwen graph path.
 
 This is an `independent_best_prefill_and_decode` reference envelope, not a
-continuous end-to-end cache route, TTFT result, or cache-handoff latency. It
-contains no same-runtime RWKV candidate, so it cannot enter the unified RTX
-5090 table or produce RWKV/Qwen ratios. Same-cache eager-versus-Graph cosine
-is at least `0.9999860525` with finite logits and full greedy equality.
-Cross-cache cosine is informational; finite traces, full greedy equality and
-prefill-next-token equality pass.
+continuous end-to-end cache route, TTFT result, or cache-handoff latency. By
+itself this source artifact contains no RWKV candidate and cannot produce
+ratios. The paired Decode v1 artifact above binds these exact bytes by SHA256
+and adds a separately captured runtime-aligned candidate without rewriting the
+reference. Same-cache eager-versus-Graph cosine is at least `0.9999860525` with
+finite logits and full greedy equality. Cross-cache cosine is informational;
+finite traces, full greedy equality and prefill-next-token equality pass.
 
 Rows are ordered by model size, GPU and B1/B8. Throughputs are medians over the
 six Prompt/Decode cells in each model/batch slice. B8 Decode is aggregate
@@ -242,8 +304,9 @@ and the complete 96-row join is in [main_table.jsonl](../bench/4090_hf_best_opti
 Use `prefill_tokps_total` and `decode_tokps_total` for the full-precision
 original throughput.
 
-The new RTX 5090 Qwen-only reference is not substituted into these historical
-joined rows because no same-runtime RWKV candidate exists.
+The new RTX 5090 Qwen-only values are not substituted into these historical
+joined rows. Their protocols remain immutable; the separately captured,
+runtime-aligned candidate is reported only in the Decode-v1 subtable above.
 
 For RTX 4080, the stricter cell-level gate now passes **36/36 adjusted
 Prefill cells and 36/36 adjusted Decode cells**; the full-matrix minima are
@@ -502,6 +565,7 @@ A complete run reports exit code 0, `pipeline_exit_code.txt=0`,
 | RTX 4090 latest checkpoints | [`bench/run_4090_adjusted_pd.sh`](../bench/run_4090_adjusted_pd.sh) | Three model pairs, B1/B8, P128/512/2048, D128/512; requires adjusted P/D `>1.00x` in all 36 cells |
 | RTX 5070 Laptop | [`bench/run_5070_qwen35_full_fla_bsz8.ps1`](../bench/run_5070_qwen35_full_fla_bsz8.ps1) | PowerShell with `-RwkvModel`, `-QwenModel`, and `-OutDir` |
 | RTX 5090 | [`bench/run_5090_qwen35_full_matrix.sh`](../bench/run_5090_qwen35_full_matrix.sh) | Four model pairs, B1/B8 full matrix |
+| RTX 5090 paired Decode v1 | [`bench/run_5090_rwkv_paired_decode_v1.sh`](../bench/run_5090_rwkv_paired_decode_v1.sh) + [`bench/validate_qwen35_paired_decode_v1.py`](../bench/validate_qwen35_paired_decode_v1.py) | Fresh 48-row RWKV capture joined to the SHA-locked Qwen reference; strict adjusted Decode 48/48, no Prefill/E2E gate |
 | RTX 5090 historical 2026-08-11 checkpoints | [Commands in the strict-gate evidence](../bench/5090_g1i_qwen35_prefill_pd_sota_20260811/README.md#reproduce-the-gate) | Four model pairs, B1/B8, P128/512/2048, D128 |
 | RTX 5090 Qwen-only optimized reference v2 | [`bench/run_5090_qwen35_best_optimized_hf.sh`](../bench/run_5090_qwen35_best_optimized_hf.sh) | Run once per Qwen checkpoint; four fixed model routes form the 48-row reference-only matrix |
 

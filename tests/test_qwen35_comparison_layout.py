@@ -110,3 +110,18 @@ def test_comparison_docs_link_full_precision_4090_pd_evidence() -> None:
             assert f"]({artifact_root}{artifact})" in text
         assert "`prefill_tokps_total`" in text
         assert "`decode_tokps_total`" in text
+
+
+def test_comparison_docs_scope_5090_paired_decode_claim() -> None:
+    artifact_root = "../bench/5090_qwen35_paired_decode_v1_20260813/"
+    for relative in (
+        "docs/QWEN35_SPEED_COMPARISON.md",
+        "docs/QWEN35_SPEED_COMPARISON_ZH.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert f"]({artifact_root}README.md)" in text
+        assert f"]({artifact_root}rwkv_candidate.jsonl)" in text
+        assert f"]({artifact_root}paired_decode_table.jsonl)" in text
+        assert f"]({artifact_root}paired_validation.json)" in text
+        assert "1.029966x/1.409279x/2.063849x" in text
+        assert "continuous_e2e_eligible=false" in text

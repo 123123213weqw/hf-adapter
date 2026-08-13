@@ -34,11 +34,17 @@ Generated inventory of benchmark scripts and evidence directories. Keep this fil
 Canonical cross-platform summary: [`../BENCHMARK.md`](../BENCHMARK.md) and
 [`../docs/HARDWARE_MATRIX.md`](../docs/HARDWARE_MATRIX.md).
 
+## Promoted paired comparison artifacts
+
+| Platform | Artifact | Current conclusion |
+|---|---|---|
+| RTX 5090 | [`5090_qwen35_paired_decode_v1_20260813/`](5090_qwen35_paired_decode_v1_20260813/README.md) | Frozen-reference parameter-adjusted Decode passes 48/48 at minimum `1.029966x`; raw Decode 48/48 is supporting telemetry. Decode-only, not quality/Prefill/E2E |
+
 ## Promoted reference-only artifacts
 
 | Platform | Artifact | Current conclusion |
 |---|---|---|
-| RTX 5090 | [`5090_qwen35_best_optimized_hf_v1_20260813/`](5090_qwen35_best_optimized_hf_v1_20260813/README.md) | Qwen3.5 0.8B/2B/4B/9B official-operator reference passes 48/48 with fixed per-model optimized Graph Decode; reference-only, unified RWKV/Qwen table pending |
+| RTX 5090 | [`5090_qwen35_best_optimized_hf_v1_20260813/`](5090_qwen35_best_optimized_hf_v1_20260813/README.md) | Qwen3.5 0.8B/2B/4B/9B official-operator reference passes 48/48 with fixed per-model optimized Graph Decode; source remains reference-only and paired Decode is reported separately |
 
 ## Promoted exact-card validation artifacts
 
@@ -77,6 +83,7 @@ two-pair conservative gate. Conclusions and reproduction commands are in
 | 5090_g1h_13p3_20260715 | RTX 5090 latest official g1h 13.3B conversion, smoke, and speed-policy acceptance | 2 | 0 |
 | 5090_g1h_qwen35_b1_b8_20260715 | RTX 5090 complete B1/B8 RWKV-7 vs full-FLA Qwen3.5 acceptance | 107 | 0 |
 | 5090_qwen35_best_optimized_hf_v1_20260813 | RTX 5090 Qwen3.5 0.8B/2B/4B/9B best-optimized official-operator reference-only matrix | 6 | 12 |
+| 5090_qwen35_paired_decode_v1_20260813 | RTX 5090 frozen-Qwen versus RWKV strict parameter-adjusted Decode 48/48, route A/B and 8/8 FLA correctness | 30 | 22 |
 | 5090_blackwell_hf_matrix_20260704 | RTX 5090 Blackwell HF validation matrix (2026-07-04) | 2 | 12 |
 | 5090_blackwell_native_prefill_smoke_20260704 | RTX 5090 Blackwell native-prefill validation (2026-07-04) | 2 | 3 |
 | 5090_blackwell_native_quant_20260704 | RTX 5090 native quant benchmark (2026-07-04) | 1 | 2 |

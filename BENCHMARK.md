@@ -45,16 +45,21 @@ rows share one locked runtime signature; the fail-closed validator reports no
 errors or fallback. Qwen is the strong official HF fast-operator baseline;
 RWKV is intentionally run at its best verified HF state, including CUDA Graph.
 
-RTX 5090 separately completed a 48/48 Qwen-only best-optimized HF reference on
-2026-08-13. That reference is eligible for Qwen baseline use, but the RTX 5090
-unified table remains pending: RWKV was not rerun in the same runtime, and the
-reference combines independently optimized Prefill and Decode axes.
+RTX 5090 first completed a 48/48 Qwen-only best-optimized HF reference on
+2026-08-13, then separately captured 48/48 RWKV rows with the same six-package
+runtime signature, GPU and shape protocol and joined them without changing the
+frozen Qwen bytes. The repository commits differ and this was not an
+interleaved A/B run. The resulting
+`qwen35_paired_decode_v1` subtable passes parameter-adjusted Decode in 48/48
+cells. This closes the paired Decode target only: the Qwen reference combines
+independently optimized Prefill and Decode axes, no Prefill gate is promoted,
+and the result is not continuous E2E.
 
 | GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
 |---|---|---:|---:|---:|---:|---|
 | RTX 4090 | `hf_fast_path_v1` + `best_optimized_hf` | 96/96 | 48/48 | 48/48 | 48/48 | **PASS** |
 | RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
-| RTX 5090 | `qwen35_best_optimized_hf_v1` reference-only | 48/48 Qwen; RWKV pending | — | — | — | **REFERENCE PASS / MAIN PENDING** |
+| RTX 5090 | `qwen35_paired_decode_v1` + frozen Qwen reference | 48 Qwen + 48 RWKV; 48 joined | not gated | 48/48 telemetry | 48/48 | **PASS — ADJUSTED DECODE ONLY** |
 
 Across the promoted 4090 matrix, raw Prefill minimum/median is
 `1.361373x/2.315043x` and parameter-adjusted Prefill is
@@ -67,6 +72,19 @@ Corrected Qwen Decode medians for 0.8B/2B/4B/9B are respectively
 [`bench/4090_hf_best_optimized_v1_20260812/`](bench/4090_hf_best_optimized_v1_20260812/README.md).
 The earlier [`native_jit` no-Graph artifact](bench/4090_hf_fast_path_v1_20260812/README.md)
 is retained as a diagnostic lane, not the max-performance headline.
+
+Across the RTX 5090 paired Decode subtable, parameter-adjusted Decode has
+minimum/median/maximum `1.029966x/1.409279x/2.063849x`; all 48 unrounded values
+are strictly above `1.0x`. The weakest cell is 0.4B/0.8B B1/P128/D128: RWKV
+renders 1,125 tok/s against Qwen's 654 tok/s and clears the required RWKV rate
+by `+2.996552%`. Raw Decode also leads 48/48 with minimum/median
+`1.373660x/1.903882x`, but that is supporting telemetry rather than the formal
+gate. All eight 512-step native-graph-versus-FLA checks preserve greedy tokens
+and finite logits; prompt/final cosine minima are `0.999981999/0.999970913`.
+Evidence:
+[`bench/5090_qwen35_paired_decode_v1_20260813/`](bench/5090_qwen35_paired_decode_v1_20260813/README.md).
+This is not a quality, Prefill, TTFT, continuous-E2E, or cache-handoff-latency
+claim.
 
 ## Production-close and historical overview
 
@@ -722,6 +740,40 @@ Sequence prefill covers g1h 2.9B and 13.3B at B1/B8 and prompt
 Evidence:
 [`bench/5090_native_official_fp16_production_20260718/`](bench/5090_native_official_fp16_production_20260718/README.md).
 
+### Frozen-reference paired Decode v1
+
+The promoted Decode-only artifact binds the immutable Qwen reference SHA256
+`b02378fe14d455f52940a3d24e4f515f49c18a06f57c65ad0b461a2330b5f6d1`
+to the clean-commit RWKV candidate SHA256
+`e24fda2db1f467eab5cbcac7da17ea3adf5a924c45c04c44e01fcae9af91b7af`.
+It covers all four model pairs, B1/B8, P128/P512/P2048 and D128/D512. The
+fail-closed validator reports 48/48 joined cells, zero errors and strict
+parameter-adjusted Decode ratios above `1.0x` in every cell.
+
+The Qwen source and RWKV candidate use different repository commits and were
+captured separately, although the validator proves equality of the six runtime
+fields, exact GPU and shape protocol. Formal B8 timing replicates one prompt
+across eight sequences; the independent correctness probes, not the timing
+rows, use eight distinct prompts.
+
+| RWKV / Qwen | Batch | Cells | Adjusted Decode minimum | Adjusted Decode median |
+|---|---:|---:|---:|---:|
+| 0.4B / 0.8B | B1 | 6 | `1.029966x` | `1.210827x` |
+| 0.4B / 0.8B | B8 | 6 | `1.040730x` | `1.225006x` |
+| 1.5B / 2B | B1 | 6 | `1.261697x` | `1.369630x` |
+| 1.5B / 2B | B8 | 6 | `1.114947x` | `1.226407x` |
+| 2.9B / 4B | B1 | 6 | `1.708151x` | `1.801785x` |
+| 2.9B / 4B | B8 | 6 | `1.099272x` | `1.196935x` |
+| 7.2B / 9B | B1 | 6 | `1.429633x` | `1.480590x` |
+| 7.2B / 9B | B8 | 6 | `1.266346x` | `1.344888x` |
+
+The narrow SM120 0.4B/1.5B B8 bundles gain `1.865301x/1.492719x` over their
+exact-card baselines with exact 512-token greedy traces. The broader 8/8
+native-graph-versus-FLA oracle also passes. Raw Decode wins 48/48 as secondary
+telemetry, but the promoted contract is parameter-adjusted Decode only. Full
+evidence and reproduction:
+[`bench/5090_qwen35_paired_decode_v1_20260813/`](bench/5090_qwen35_paired_decode_v1_20260813/README.md).
+
 ### Qwen3.5 best-optimized HF reference v2
 
 The 2026-08-13 Qwen-only artifact completes all 48 dense-FP16 reference cells
@@ -733,12 +785,12 @@ correctness-passing StaticCache CUDA Graph route per model: Inductor
 is a repository benchmark optimization, not an official Qwen graph path.
 
 This is an `independent_best_prefill_and_decode` reference envelope, not a
-continuous end-to-end cache route, TTFT result, or cache-handoff latency. It
-contains no same-runtime RWKV candidate, so it is eligible as a Qwen reference
-lane but not as the unified RTX 5090 main table. Same-cache eager-versus-Graph
-cosine is at least `0.9999860525` with finite logits and full greedy equality.
-Cross-cache cosine is informational; finite traces, full greedy equality and
-prefill-next-token equality pass.
+continuous end-to-end cache route, TTFT result, or cache-handoff latency. The
+source directory itself remains Qwen-only; the paired Decode-v1 artifact above
+binds its exact SHA256 to a separately captured runtime-aligned candidate.
+Same-cache eager-versus-Graph cosine is at least `0.9999860525` with finite
+logits and full greedy equality. Cross-cache cosine is informational; finite
+traces, full greedy equality and prefill-next-token equality pass.
 
 Rows are ordered by model size, GPU and B1/B8. The throughput columns are
 medians over the six Prompt/Decode cells for each model/batch slice. B8 Decode

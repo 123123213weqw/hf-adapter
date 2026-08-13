@@ -89,6 +89,7 @@ def main() -> int:
         "3090_g1i_qwen35_prefill_pd_20260812",
         "3090_g1i_qwen35_maxperf_20260812",
         "5090_qwen35_best_optimized_hf_v1_20260813",
+        "5090_qwen35_paired_decode_v1_20260813",
     ):
         assert artifact in bench_index, f"current promoted artifact missing: {artifact}"
 
