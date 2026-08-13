@@ -38,6 +38,7 @@ Canonical cross-platform summary: [`../BENCHMARK.md`](../BENCHMARK.md) and
 
 | Platform | Artifact | Current conclusion |
 |---|---|---|
+| RTX 4080 | [`4080_qwen35_paired_pd_v1_20260814/`](4080_qwen35_paired_pd_v1_20260814/README.md) | Same-runtime raw and parameter-adjusted Prefill/Decode pass all 36 cells; adjusted minima `1.051333x/1.022115x`; 6/6 512-token native-graph/FLA probes pass. Speed only, not quality/E2E |
 | RTX 5090 | [`5090_qwen35_paired_decode_v1_20260813/`](5090_qwen35_paired_decode_v1_20260813/README.md) | Frozen-reference parameter-adjusted Decode passes 48/48 at minimum `1.029966x`; raw Decode 48/48 is supporting telemetry. Decode-only, not quality/Prefill/E2E |
 
 ## Promoted reference-only artifacts
@@ -65,6 +66,7 @@ two-pair conservative gate. Conclusions and reproduction commands are in
 
 | Directory | Title / purpose | JSONL | Logs |
 | --- | --- | --- | --- |
+| 4080_qwen35_paired_pd_v1_20260814 | RTX 4080 same-runtime strict paired Prefill/Decode 36/36, routes and 6/6 FLA correctness | 24 | 16 |
 | amd_gfx1100_native_20260727 | AMD gfx1100/ROCm 7.2.1 fully native HF compatibility and baseline | 1 | 13 |
 | 3090_g1h_7p2_bsz8_20260714 | RTX 3090 latest-g1h 7.2B vs Qwen3.5-9B bsz8 acceptance | 5 | 5 |
 | 3090_g1i_qwen35_maxperf_20260812 | RTX 3090 exact-shape max-performance B1/B8 Qwen3.5 matrix, correctness and promotion probes | 10 | 0 |

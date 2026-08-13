@@ -5,7 +5,7 @@ not replace [`../BENCHMARK.md`](../BENCHMARK.md), the hardware matrix, or raw
 dated artifacts. A row means only that the linked, exact profile has evidence;
 it does not imply an unbounded all-card or all-shape claim.
 
-Last updated: **2026-08-13**. The released baseline was audited at `main`
+Last updated: **2026-08-14**. The released baseline was audited at `main`
 `045bac1b769240facd290e1ac8232e8b1ca39778`.
 
 ## Inference performance and quantization
@@ -21,6 +21,7 @@ Last updated: **2026-08-13**. The released baseline was audited at `main`
 | `3090-latest-prefill-pd` | RTX 3090 | latest g1d/g1i 0.4B-7.2B versus full-FLA Qwen3.5, B1/B8 | Strict parameter-adjusted prefill passes 24/24 at minimum/median `1.227477x/1.467758x`; correctness passes 25/25 | [`3090_g1i_qwen35_maxperf_20260812`](../bench/3090_g1i_qwen35_maxperf_20260812/README.md) |
 | `4080-qwen-pairs` | RTX 4080 | 0.4B/1.5B/2.9B versus Qwen3.5 B1/B8 | Six dense pair matrices and exact output-head quant lanes pass | [`4080_full_model_ladder_20260719`](../bench/4080_full_model_ladder_20260719/README.md) |
 | `4080-adjusted-pd` | RTX 4080 | 0.4B/1.5B/2.9B versus Qwen3.5 B1/B8 | Adjusted Prefill and Decode each pass 36/36 cells; minima `1.068520x/1.140700x` | [`4080_adjusted_pd_20260811`](../bench/4080_adjusted_pd_20260811/README.md) |
+| `4080-paired-pd-v1` | RTX 4080 | Same-runtime 0.4B/0.8B through 2.9B/4B, B1/B8, P128/512/2048, D128/512 | Raw and parameter-adjusted Prefill/Decode all pass 36/36; adjusted minima `1.051333x/1.022115x`; 6/6 512-token native-graph/FLA probes pass. Speed only, not quality/E2E | [`4080_qwen35_paired_pd_v1_20260814`](../bench/4080_qwen35_paired_pd_v1_20260814/README.md) |
 | `4080-b8-projection` | RTX 4080 | 0.4B/1.5B/2.9B B8 | Grouped W/A/V projection gains `1.1267x/1.0942x/1.0809x`, greedy `4,608/4,608` | [`4080_b8_projection_bmm_20260809`](../bench/4080_b8_projection_bmm_20260809/README.md) |
 | `4080-7p2-state` | RTX 4080 | 7.2B/B8 FP16 state | `344.39 tok/s`, `1.0301x`, `-123.88 MiB`, greedy `12,288/12,288` | [`4080_7p2b_fp16_state_20260809`](../bench/4080_7p2b_fp16_state_20260809/README.md) |
 | `4090-b8-matrix` | RTX 4090 | 0.4B-7.2B pair ladder, dense/W8/W4 B8 | Small-model 54/54 and 7.2B 18/18 matrices pass | [`4090_small_bsz8_20260715`](../bench/4090_small_bsz8_20260715/README.md), [`4090_g1h_7p2_bsz8_20260715`](../bench/4090_g1h_7p2_bsz8_20260715/README.md) |

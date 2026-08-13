@@ -125,3 +125,18 @@ def test_comparison_docs_scope_5090_paired_decode_claim() -> None:
         assert f"]({artifact_root}paired_validation.json)" in text
         assert "1.029966x/1.409279x/2.063849x" in text
         assert "continuous_e2e_eligible=false" in text
+
+
+def test_comparison_docs_scope_4080_paired_pd_claim() -> None:
+    artifact_root = "../bench/4080_qwen35_paired_pd_v1_20260814/"
+    for relative in (
+        "docs/QWEN35_SPEED_COMPARISON.md",
+        "docs/QWEN35_SPEED_COMPARISON_ZH.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert f"]({artifact_root}README.md)" in text
+        assert f"]({artifact_root}paired_pd_table.jsonl)" in text
+        assert f"]({artifact_root}paired_validation.json)" in text
+        assert "1.051333x/1.313931x/2.891099x" in text
+        assert "1.022115x/1.190224x/1.836279x" in text
+        assert "36/36" in text

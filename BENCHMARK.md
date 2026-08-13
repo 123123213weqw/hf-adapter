@@ -5,7 +5,7 @@ tuning chronology. Raw rows, logs and negative experiments remain in
 [`bench/`](bench/); platform interpretation lives in
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
-Last updated: **2026-08-13**.
+Last updated: **2026-08-14**.
 
 For a consolidated RWKV-7 vs Qwen3.5 parameter/speed table and live GPU
 reproduction workflow, see the [English guide](docs/QWEN35_SPEED_COMPARISON.md)
@@ -15,7 +15,7 @@ the full platform, quantization, and acceptance details.
 > **Superseding Qwen comparator contract (2026-08-12):** every Qwen speed row
 > recorded before `hf_fast_path_v1` is historical non-unified evidence. Its
 > original PASS status applies only to its original local gate. It is excluded
-> from the new RTX 3090/4090/5090 main table until rerun with one locked
+> from the new RTX 3090/4080/4090/5090 main table until rerun with one locked
 > Python/PyTorch/CUDA/Transformers/FLA/causal-conv/repository environment,
 > official Dao-AILab `causal_conv1d`, and an explicitly labelled RWKV lane.
 > The primary performance lane is exact-card `best_optimized_hf`; the no-Graph
@@ -55,10 +55,18 @@ cells. This closes the paired Decode target only: the Qwen reference combines
 independently optimized Prefill and Decode axes, no Prefill gate is promoted,
 and the result is not continuous E2E.
 
+RTX 4080 completed a same-runtime paired Prefill/Decode capture on 2026-08-14.
+It covers the three model pairs that fit the 16 GiB card, with 36 Qwen rows,
+36 RWKV rows, and 36 joined cells. Qwen 0.8B/2B use StaticCache Inductor CUDA
+Graph; Qwen 4B uses the strongest capacity-safe official DynamicCache
+module-call route. Raw and parameter-adjusted Prefill and Decode all pass
+36/36 without weakening the reference.
+
 | GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
 |---|---|---:|---:|---:|---:|---|
 | RTX 4090 | `hf_fast_path_v1` + `best_optimized_hf` | 96/96 | 48/48 | 48/48 | 48/48 | **PASS** |
 | RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
+| RTX 4080 | `qwen35_paired_pd_v1` | 36 Qwen + 36 RWKV; 36 joined | 36/36 | 36/36 | 36/36 | **PASS — STRICT P+D** |
 | RTX 5090 | `qwen35_paired_decode_v1` + frozen Qwen reference | 48 Qwen + 48 RWKV; 48 joined | not gated | 48/48 telemetry | 48/48 | **PASS — ADJUSTED DECODE ONLY** |
 
 Across the promoted 4090 matrix, raw Prefill minimum/median is
@@ -86,6 +94,18 @@ Evidence:
 This is not a quality, Prefill, TTFT, continuous-E2E, or cache-handoff-latency
 claim.
 
+Across the RTX 4080 paired P+D table, raw Prefill minimum/median/maximum is
+`1.500014x/1.920082x/4.825638x`, and raw Decode is
+`1.302605x/1.723038x/3.065001x`. Parameter-adjusted Prefill is
+`1.051333x/1.313931x/2.891099x`; parameter-adjusted Decode is
+`1.022115x/1.190224x/1.836279x`. All four gates pass all 36 cells. The weakest
+adjusted Decode cell is 0.4B/0.8B B8/P128/D128: RWKV reaches 3,344 tok/s
+against Qwen's 1,960 tok/s. Six independent 512-token native-graph-versus-FLA
+checks preserve greedy tokens and finite logits, with prompt/final cosine
+minima `0.999990582/0.999993861`. Evidence:
+[`bench/4080_qwen35_paired_pd_v1_20260814/`](bench/4080_qwen35_paired_pd_v1_20260814/README.md).
+This is an inference-speed result, not a model-quality or continuous-E2E claim.
+
 ## Production-close and historical overview
 
 Rows involving Qwen3.5 in this table are **HISTORICAL** under the superseding
@@ -104,6 +124,7 @@ contract above, even where the final column preserves their original PASS label.
 | RTX 4090 | Latest 0.4B/1.5B/2.9B, B1/B8 Prefill plus B8 decode | exact-card 4080-route transfer, forward/reverse A/B, independent recurrent oracle, greedy/cache handoff | block-scoped FP16 accumulation `1.0057x-1.3007x`; grouped W/A/V BMM `1.1259x-1.2002x` | **PASS 108/108 + 18/18 + 9/9** |
 | RTX 4090 | Latest 0.4B/1.5B/2.9B/7.2B versus official-FLA/causal-conv Qwen3.5, B1/B8, dense FP16 | 48/48 verified Qwen references; RWKV graph/cache/greedy/generate checks pass, including memory-bounded 7.2B/B8/P2048 | parameter-adjusted Prefill/Decode minima `1.060506x/1.829468x`; raw minima `1.361373x/2.275368x` | **PASS 48/48 + 48/48** |
 | RTX 4090 | Historical 0.4B dense and W8/W4 speed lanes | 32-step greedy and cache handoff pass | decode `1.007x–1.418x` matching Albatross; bsz4 prefill `1.007x` current-session / `0.916x` historical high-water | **PASS measured lanes** |
+| RTX 4080 | Same-runtime strict 0.4B/0.8B, 1.5B/2B and 2.9B/4B paired P+D, B1/B8, dense FP16 | 36/36 candidate and reference rows pass; 6/6 512-token native-graph/FLA checks pass | raw Prefill/Decode minima `1.500014x/1.302605x`; adjusted minima `1.051333x/1.022115x` | **PASS 36/36 + 36/36** |
 | RTX 4080 | Native HF 0.4B/1.5B/2.9B vs full-FLA Qwen3.5 0.8B/2B/4B, B1/B8; 7.2B/13.3B capacity | fail-closed optimized-Qwen contracts; paired quant cosine/greedy gates; exact-card capacity probes | 6/6 pair matrices pass; dense prefill/decode minima `1.0123x/1.4353x`; A8W8/W4 complete-cell minima `1.0031x/1.0160x`; 13.3B MM8/MM4 fit | **PASS measured lanes** |
 | RTX 4080 | Exact B8 FP16 grouped W/A/V tensor-core projection, 0.4B/1.5B/2.9B | three independent loads per model; first-step logits exact; greedy `4,608/4,608` | median decode gains `1.1267x/1.0942x/1.0809x`; process peak-memory deltas `+2.39%/+1.90%/+1.55%` | **PASS exact B8 lane** |
 | RTX 4080 | Exact 7.2B/B8 FP16-weight, FP16-state native-graph decode | three independent processes; greedy `12,288/12,288`; minimum first-step cosine `0.99999475`; graph-cache hit `99.9039%` | `344.39 tok/s`, `23.2292 ms/step`, `1.0301x` the FP32-state route and `-123.88 MiB` median peak allocated VRAM | **PASS exact 7.2B/B8 lane** |
