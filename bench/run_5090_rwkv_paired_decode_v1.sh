@@ -31,7 +31,17 @@ fi
 ROOT="$(realpath -e -- "${ROOT}")"
 OUT_DIR="$(realpath -m -- "${OUT_DIR}")"
 if [[ "${PYTHON_BIN}" == */* ]]; then
-  PYTHON_BIN="$(realpath -e -- "${PYTHON_BIN}")"
+  # Preserve the final launcher component: a venv's ``bin/python`` is usually
+  # a symlink to the system interpreter, and resolving that symlink would drop
+  # the venv's site-packages. Canonicalize only its containing directory.
+  python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"
+  PYTHON_BIN="${python_dir}/$(basename -- "${PYTHON_BIN}")"
+else
+  PYTHON_BIN="$(command -v -- "${PYTHON_BIN}")"
+fi
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "PYTHON_BIN must resolve to an executable Python launcher" >&2
+  exit 2
 fi
 for name in "${required[@]}"; do
   if [[ -z "${!name:-}" || ! -d "${!name}" ]]; then

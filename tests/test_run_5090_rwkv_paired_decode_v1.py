@@ -226,6 +226,16 @@ def test_candidate_runner_runtime_matches_frozen_reference() -> None:
     assert "candidate matrix expected 48 rows" in text
 
 
+def test_candidate_runner_preserves_virtualenv_python_launcher_symlink() -> None:
+    text = script_text()
+
+    assert 'realpath -e -- "${PYTHON_BIN}"' not in text
+    assert 'python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"' in text
+    assert 'PYTHON_BIN="${python_dir}/$(basename -- "${PYTHON_BIN}")"' in text
+    assert 'PYTHON_BIN="$(command -v -- "${PYTHON_BIN}")"' in text
+    assert '[[ ! -x "${PYTHON_BIN}" ]]' in text
+
+
 def test_candidate_runner_forces_reproducible_process_environment() -> None:
     text = script_text()
 
