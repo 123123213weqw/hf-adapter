@@ -736,6 +736,8 @@ def test_policy_defaults_are_conservative() -> None:
     assert blackwell.ada_linear_roles == "hidden,ffn_up,ffn_down"
     assert blackwell.ada_wagv_lora
     assert blackwell.ada_wag_lora
+    assert not blackwell.ada_wagv_bmm
+    assert not blackwell.sm120_compiled_ffn
     assert blackwell.ada_sparse_ffn
     assert blackwell.ada_sparse_ffn_low_memory_pack
     assert blackwell.ada_sparse_ffn_share_pack

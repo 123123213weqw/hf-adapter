@@ -327,6 +327,9 @@ class KernelPolicy:
     ada_wagv_lora: bool = False
     ada_wagv_lora_max_rows: int = 4
     ada_wagv_bmm: bool = False
+    # Exact SM120/B8/H1024+H2048 torch.compile dense FFN. This remains
+    # explicit-only until full-model horizon and paired-matrix evidence lands.
+    sm120_compiled_ffn: bool = False
     ada_wag_lora: bool = False
     ada_sparse_ffn: bool = False
     ada_sparse_ffn_max_rows: int = 19
@@ -1699,6 +1702,7 @@ def policy_for_profile(profile: GPUProfile) -> KernelPolicy:
             ada_linear_rows="1" if is_5090 else "2 4",
             ada_linear_roles="hidden,ffn_up,ffn_down" if is_5090 else "auto",
             ada_wagv_lora=is_5090,
+            sm120_compiled_ffn=False,
             ada_wag_lora=is_5090,
             ada_sparse_ffn=is_5090,
             ada_sparse_ffn_max_rows=19,

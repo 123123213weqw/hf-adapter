@@ -87,6 +87,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--rwkv-attn-mode", choices=["chunk", "fused_recurrent"], default="fused_recurrent")
     ap.add_argument("--rwkv-code-source", choices=["repo", "model"], default="repo")
+    ap.add_argument(
+        "--rwkv-implementation",
+        choices=["auto", "wrapper_repo"],
+        default="auto",
+        help="Select converted auto_map or the explicit repository FLA wrapper loader.",
+    )
     ap.add_argument("--qwen-backend", choices=["auto", "fla", "torch"], default="auto")
     ap.add_argument(
         "--qwen-conv-backend",
@@ -110,7 +116,17 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional backend-probe output path forwarded to the shared worker.",
     )
+    ap.add_argument(
+        "--probe-cell",
+        default="",
+        metavar="BxPxD",
+        help=(
+            "Optional exact resident cell that may write --probe-output. "
+            "This avoids rerunning a model solely to capture a long probe."
+        ),
+    )
     ap.add_argument("--probe-tokens", type=int, default=8)
+    ap.add_argument("--probe-batch-size", type=int, default=1)
     ap.add_argument("--results", required=True)
     ap.add_argument("--fail-fast", action="store_true")
     return ap.parse_args()
@@ -164,6 +180,45 @@ def resolve_sweep_cells(args: argparse.Namespace) -> list[tuple[int, int, int]]:
     return cells
 
 
+def resolve_probe_cell(
+    args: argparse.Namespace,
+    cells: list[tuple[int, int, int]],
+) -> tuple[int, int, int] | None:
+    """Resolve an optional single probe cell and fail closed on ambiguity."""
+
+    raw = getattr(args, "probe_cell", "")
+    if not raw:
+        return None
+    if not getattr(args, "probe_output", ""):
+        raise ValueError("--probe-cell requires --probe-output")
+    try:
+        cell = tuple(int(value) for value in str(raw).lower().split("x"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid --probe-cell value {raw!r}; expected BxPxD") from exc
+    if len(cell) != 3 or any(value <= 0 for value in cell):
+        raise ValueError(
+            f"invalid --probe-cell value {raw!r}; expected three positive dimensions"
+        )
+    resolved = (cell[0], cell[1], cell[2])
+    if resolved not in cells:
+        raise ValueError(
+            f"--probe-cell {raw!r} is not present in the resolved resident sweep"
+        )
+    return resolved
+
+
+def selected_probe_output(
+    args: argparse.Namespace,
+    cell: tuple[int, int, int],
+    probe_cell: tuple[int, int, int] | None,
+) -> str:
+    """Preserve legacy probing unless one exact resident cell was requested."""
+
+    if probe_cell is None or cell == probe_cell:
+        return str(getattr(args, "probe_output", ""))
+    return ""
+
+
 def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, decode_tokens: int) -> Namespace:
     return Namespace(
         model=args.model,
@@ -187,6 +242,7 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
         runs=args.runs,
         rwkv_attn_mode=args.rwkv_attn_mode,
         rwkv_code_source=args.rwkv_code_source,
+        rwkv_implementation=getattr(args, "rwkv_implementation", "auto"),
         qwen_backend=args.qwen_backend,
         qwen_conv_backend=getattr(args, "qwen_conv_backend", "auto"),
         require_qwen_fast_path=args.require_qwen_fast_path,
@@ -197,6 +253,7 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
         qwen_compile_mode=getattr(args, "qwen_compile_mode", "max-autotune"),
         probe_output=args.probe_output,
         probe_tokens=args.probe_tokens,
+        probe_batch_size=getattr(args, "probe_batch_size", 1),
         results=args.results,
         optional=False,
     )
@@ -232,6 +289,7 @@ def main() -> int:
     os.environ.setdefault("RWKV7_NATIVE_PREFILL_GRAPH_CACHE_SIZE", "1")
 
     cells = resolve_sweep_cells(args)
+    probe_cell = resolve_probe_cell(args, cells)
     effective_model_path = args.model
     temporary = None
     model = None
@@ -254,6 +312,7 @@ def main() -> int:
             cells[0][1],
             cells[0][2],
         )
+        seed_args.probe_output = selected_probe_output(args, cells[0], probe_cell)
         speed.validate_args(seed_args)
         model = speed.load_model(seed_args, speed.DTYPES[args.dtype], effective_model_path)
         qwen_contract = speed.enforce_qwen_backend(model, seed_args)
@@ -263,10 +322,12 @@ def main() -> int:
         total = len(cells)
         active_batch = None
         for batch_size, prompt_tokens, decode_tokens in cells:
+            cell = (batch_size, prompt_tokens, decode_tokens)
             if batch_size != active_batch:
                 clear_shape_caches(model)
                 active_batch = batch_size
             current = cell_args(args, batch_size, prompt_tokens, decode_tokens)
+            current.probe_output = selected_probe_output(args, cell, probe_cell)
             speed.validate_args(current)
             try:
                 row = speed.benchmark_loaded(
@@ -280,6 +341,10 @@ def main() -> int:
                 failures += 1
                 row = speed.failure_row(current, exc)
                 if args.fail_fast:
+                    row["resident_probe_cell"] = list(probe_cell) if probe_cell else None
+                    row["resident_probe_cell_selected"] = (
+                        cell == probe_cell if probe_cell else None
+                    )
                     speed.append_row(args.results, row)
                     print("QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False), flush=True)
                     raise
@@ -288,6 +353,10 @@ def main() -> int:
             row["resident_cell_index"] = rows
             row["resident_cells_total"] = total
             row["load_amortized"] = rows > 1
+            row["resident_probe_cell"] = list(probe_cell) if probe_cell else None
+            row["resident_probe_cell_selected"] = (
+                cell == probe_cell if probe_cell else None
+            )
             speed.append_row(args.results, row)
             print("QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False), flush=True)
             gc.collect()

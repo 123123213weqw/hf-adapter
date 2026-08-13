@@ -5,6 +5,7 @@ The matrix orchestrator invokes this worker in a fresh process for every raw
 row.  It intentionally benchmarks exact tensor shapes; model-quality evaluation
 uses separate task runners.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,11 +39,16 @@ def _bootstrap_qwen_backend(argv: list[str]) -> str:
 
 QWEN_BACKEND_BOOTSTRAP = _bootstrap_qwen_backend(sys.argv[1:])
 QWEN_FORCE_TORCH = (
-    os.environ.get("RWKV7_QWEN35_FORCE_TORCH", "0").lower() in {"1", "true", "yes", "on"}
+    os.environ.get("RWKV7_QWEN35_FORCE_TORCH", "0").lower()
+    in {"1", "true", "yes", "on"}
     or QWEN_BACKEND_BOOTSTRAP == "torch"
 )
 if QWEN_FORCE_TORCH:
-    sys.path[:] = [path for path in sys.path if "flash-linear-attention" not in path.replace("\\", "/").lower()]
+    sys.path[:] = [
+        path
+        for path in sys.path
+        if "flash-linear-attention" not in path.replace("\\", "/").lower()
+    ]
     _original_find_spec = importlib.util.find_spec
 
     def _find_spec_without_fla(name: str, *args, **kwargs):
@@ -70,6 +76,8 @@ def _is_finite_real_number(value: Any) -> bool:
         and isinstance(value, (int, float))
         and math.isfinite(value)
     )
+
+
 PROMPT_SEED = (
     "RWKV and Qwen are language models evaluated with identical tensor shapes. "
     "This sentence is repeated only to build deterministic benchmark tokens. "
@@ -100,6 +108,17 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--model-role must be candidate or reference")
     if args.model_kind not in {"rwkv", "qwen35"}:
         raise ValueError("--model-kind must be rwkv or qwen35")
+    rwkv_implementation = str(getattr(args, "rwkv_implementation", "auto"))
+    if rwkv_implementation not in {"auto", "wrapper_repo"}:
+        raise ValueError("--rwkv-implementation must be auto or wrapper_repo")
+    if rwkv_implementation == "wrapper_repo" and (
+        args.model_kind != "rwkv"
+        or str(getattr(args, "rwkv_code_source", "repo")) != "repo"
+    ):
+        raise ValueError(
+            "--rwkv-implementation wrapper_repo requires --model-kind rwkv "
+            "and --rwkv-code-source repo"
+        )
     native_quantizations = {
         "torchao_w8",
         "torchao_w4",
@@ -116,9 +135,13 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--qwen-backend must be auto, fla, or torch")
     qwen_conv_backend = str(getattr(args, "qwen_conv_backend", "auto"))
     if qwen_conv_backend not in {"auto", "causal_conv1d", "fla_triton"}:
-        raise ValueError("--qwen-conv-backend must be auto, causal_conv1d, or fla_triton")
+        raise ValueError(
+            "--qwen-conv-backend must be auto, causal_conv1d, or fla_triton"
+        )
     if args.qwen_backend == "torch" and qwen_conv_backend != "auto":
-        raise ValueError("an accelerated Qwen conv backend cannot be combined with --qwen-backend torch")
+        raise ValueError(
+            "an accelerated Qwen conv backend cannot be combined with --qwen-backend torch"
+        )
     qwen_decode_optimization = str(
         getattr(args, "qwen_decode_optimization", "module_call_dynamic")
     )
@@ -132,9 +155,7 @@ def validate_args(args: argparse.Namespace) -> None:
         )
     if qwen_decode_optimization in QWEN_STATIC_GRAPH_ROUTES:
         if qwen_decode_optimization == "static_cache_inductor_cudagraph":
-            qwen_compile_mode = str(
-                getattr(args, "qwen_compile_mode", "max-autotune")
-            )
+            qwen_compile_mode = str(getattr(args, "qwen_compile_mode", "max-autotune"))
             if qwen_compile_mode not in {"reduce-overhead", "max-autotune"}:
                 raise ValueError(
                     "--qwen-compile-mode must be reduce-overhead or max-autotune"
@@ -170,12 +191,23 @@ def validate_args(args: argparse.Namespace) -> None:
             raise ValueError("--qwen-graph-probe-tokens must be positive")
     if args.probe_output and args.probe_tokens <= 0:
         raise ValueError("--probe-tokens must be positive when --probe-output is set")
+    probe_batch_size = int(getattr(args, "probe_batch_size", 1))
+    if args.probe_output and not 1 <= probe_batch_size <= int(args.batch_size):
+        raise ValueError(
+            "--probe-batch-size must be in [1, --batch-size] when --probe-output is set"
+        )
 
 
-def build_exact_prompt(tokenizer, prompt_tokens: int, batch_size: int, device: str) -> torch.Tensor:
-    encoded = tokenizer(PROMPT_SEED * 32, return_tensors="pt", add_special_tokens=False).input_ids
+def build_exact_prompt(
+    tokenizer, prompt_tokens: int, batch_size: int, device: str
+) -> torch.Tensor:
+    encoded = tokenizer(
+        PROMPT_SEED * 32, return_tensors="pt", add_special_tokens=False
+    ).input_ids
     if encoded.ndim != 2 or encoded.shape[0] != 1 or encoded.shape[1] == 0:
-        raise RuntimeError(f"tokenizer returned invalid input shape {tuple(encoded.shape)}")
+        raise RuntimeError(
+            f"tokenizer returned invalid input shape {tuple(encoded.shape)}"
+        )
     repeats = (prompt_tokens + int(encoded.shape[1]) - 1) // int(encoded.shape[1])
     ids = encoded.repeat(1, repeats)[:, :prompt_tokens].repeat(batch_size, 1)
     return ids.to(device) if device.startswith("cuda") else ids
@@ -183,6 +215,17 @@ def build_exact_prompt(tokenizer, prompt_tokens: int, batch_size: int, device: s
 
 def model_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]:
     config = getattr(model, "config", None)
+    implementation_effective = None
+    if args.model_kind == "rwkv" and model is not None:
+        implementation_effective = getattr(
+            model, "_rwkv7_benchmark_implementation_effective", None
+        )
+        if implementation_effective is None:
+            class_name = type(model).__name__
+            if class_name == "NativeRWKV7ForCausalLM":
+                implementation_effective = "native_model"
+            elif class_name == "RWKV7ForCausalLM":
+                implementation_effective = "wrapper_repo"
     return {
         "model_name": Path(args.model).name,
         "model_id_or_path": args.model,
@@ -192,8 +235,11 @@ def model_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]:
         "hidden_size": getattr(config, "hidden_size", None),
         "intermediate_size": getattr(config, "intermediate_size", None),
         "num_hidden_layers": getattr(config, "num_hidden_layers", None),
-        "num_attention_heads": getattr(config, "num_attention_heads", getattr(config, "num_heads", None)),
+        "num_attention_heads": getattr(
+            config, "num_attention_heads", getattr(config, "num_heads", None)
+        ),
         "head_dim": getattr(config, "head_dim", None),
+        "rwkv_implementation_effective": implementation_effective,
     }
 
 
@@ -206,6 +252,11 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
         "model_pair": args.model_pair,
         "model_role": args.model_role,
         "model_kind": args.model_kind,
+        "rwkv_implementation_requested": str(
+            getattr(args, "rwkv_implementation", "auto")
+        )
+        if args.model_kind == "rwkv"
+        else None,
         "dtype": args.dtype,
         "quantization": args.quantization,
         "qwen_backend_requested": args.qwen_backend,
@@ -230,8 +281,12 @@ def base_row(args: argparse.Namespace) -> dict[str, Any]:
         "prompt_tokens": args.prompt_tokens,
         "decode_tokens": args.decode_tokens,
         "prefill_chunk_size": int(getattr(args, "prefill_chunk_size", 0) or 0),
-        "native_quant_min_params_requested": int(getattr(args, "native_quant_min_params", 1_000_000)),
-        "native_quant_policy_requested": str(getattr(args, "native_quant_policy", "memory")),
+        "native_quant_min_params_requested": int(
+            getattr(args, "native_quant_min_params", 1_000_000)
+        ),
+        "native_quant_policy_requested": str(
+            getattr(args, "native_quant_policy", "memory")
+        ),
         "torchao_group_size_requested": int(getattr(args, "torchao_group_size", 128)),
         **model_metadata(args),
     }
@@ -272,7 +327,9 @@ def device_name(device: str) -> str:
 def peak_mb(device: str) -> float | None:
     if not device.startswith("cuda") or not torch.cuda.is_available():
         return None
-    return round(torch.cuda.max_memory_allocated(cuda_device_index(device)) / 1024 / 1024, 1)
+    return round(
+        torch.cuda.max_memory_allocated(cuda_device_index(device)) / 1024 / 1024, 1
+    )
 
 
 def _tensor_payload_bytes(tensor, seen: set[int]) -> int:
@@ -332,7 +389,9 @@ def model_parameter_metadata(model, args: argparse.Namespace) -> dict[str, Any]:
     unique: dict[int, tuple[str, Any]] = {}
     for name, parameter in model.named_parameters():
         unique.setdefault(id(parameter), (name, parameter))
-    total = sum(_logical_parameter_numel(parameter) for _name, parameter in unique.values())
+    total = sum(
+        _logical_parameter_numel(parameter) for _name, parameter in unique.values()
+    )
     expert = sum(
         _logical_parameter_numel(parameter)
         for name, parameter in unique.values()
@@ -393,14 +452,20 @@ def set_rwkv_runtime(model, args: argparse.Namespace) -> None:
             attn.mode = args.rwkv_attn_mode
 
 
-def prepare_rwkv_model_dir(model_path: str, code_source: str) -> tuple[str, tempfile.TemporaryDirectory[str] | None]:
+def prepare_rwkv_model_dir(
+    model_path: str, code_source: str
+) -> tuple[str, tempfile.TemporaryDirectory[str] | None]:
     if code_source == "model":
         return model_path, None
     source = Path(model_path).resolve()
     repo_code = Path(__file__).resolve().parents[1] / "rwkv7_hf"
     if not source.is_dir():
-        raise ValueError("--rwkv-code-source repo requires a local converted model directory")
-    temporary = tempfile.TemporaryDirectory(prefix="rwkv7_qwen35_repo_code_", dir=source.parent)
+        raise ValueError(
+            "--rwkv-code-source repo requires a local converted model directory"
+        )
+    temporary = tempfile.TemporaryDirectory(
+        prefix="rwkv7_qwen35_repo_code_", dir=source.parent
+    )
     target = Path(temporary.name)
     for item in source.iterdir():
         if item.name == "__pycache__" or item.suffix == ".py":
@@ -418,7 +483,9 @@ def prepare_rwkv_model_dir(model_path: str, code_source: str) -> tuple[str, temp
     return str(target), temporary
 
 
-def load_model(args: argparse.Namespace, dtype: torch.dtype, model_path: str | None = None):
+def load_model(
+    args: argparse.Namespace, dtype: torch.dtype, model_path: str | None = None
+):
     kwargs: dict[str, Any] = {
         "torch_dtype": dtype,
         "device_map": device_map_for(args.device),
@@ -428,8 +495,48 @@ def load_model(args: argparse.Namespace, dtype: torch.dtype, model_path: str | N
     if qconfig is not None:
         kwargs["quantization_config"] = qconfig
     if args.model_kind == "rwkv":
-        kwargs["trust_remote_code"] = True
-        model = AutoModelForCausalLM.from_pretrained(model_path or args.model, **kwargs).eval()
+        implementation = str(getattr(args, "rwkv_implementation", "auto"))
+        if implementation == "wrapper_repo":
+            if str(getattr(args, "rwkv_code_source", "repo")) != "repo":
+                raise ValueError(
+                    "wrapper_repo loading requires --rwkv-code-source repo"
+                )
+            from rwkv7_hf.configuration_rwkv7 import RWKV7Config
+            from rwkv7_hf.modeling_rwkv7 import RWKV7ForCausalLM
+
+            # Bypass converted config auto_map explicitly. The canonical model
+            # directory remains the weight/config source and recorded identity;
+            # importing the repository classes directly makes the FLA wrapper
+            # implementation auditable without rewriting model inputs.
+            canonical_model_path = str(Path(args.model).resolve(strict=True))
+            config = RWKV7Config.from_pretrained(canonical_model_path)
+            previous_native_model = os.environ.get("RWKV7_NATIVE_MODEL")
+            os.environ["RWKV7_NATIVE_MODEL"] = "0"
+            try:
+                model = RWKV7ForCausalLM.from_pretrained(
+                    canonical_model_path,
+                    config=config,
+                    **kwargs,
+                ).eval()
+            finally:
+                if previous_native_model is None:
+                    os.environ.pop("RWKV7_NATIVE_MODEL", None)
+                else:
+                    os.environ["RWKV7_NATIVE_MODEL"] = previous_native_model
+            setattr(model, "_rwkv7_benchmark_implementation_effective", "wrapper_repo")
+        else:
+            kwargs["trust_remote_code"] = True
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path or args.model, **kwargs
+            ).eval()
+            effective = (
+                "native_model"
+                if type(model).__name__ == "NativeRWKV7ForCausalLM"
+                else "wrapper_repo"
+                if type(model).__name__ == "RWKV7ForCausalLM"
+                else "unknown"
+            )
+            setattr(model, "_rwkv7_benchmark_implementation_effective", effective)
         if args.quantization == "bnb8_a8w8_head":
             from rwkv7_hf.native_quant_a8w8 import quantize_model_a8w8
 
@@ -454,11 +561,17 @@ def load_model(args: argparse.Namespace, dtype: torch.dtype, model_path: str | N
             setattr(model, "_rwkv7_cross_model_quant_replaced_modules", int(replaced))
         elif args.quantization in {"a8w8", "mm8", "mm4"}:
             if args.quantization == "a8w8":
-                from rwkv7_hf.native_quant_a8w8 import quantize_model_a8w8 as quantize_model
+                from rwkv7_hf.native_quant_a8w8 import (
+                    quantize_model_a8w8 as quantize_model,
+                )
             elif args.quantization == "mm8":
-                from rwkv7_hf.native_quant_mm8 import quantize_model_mm8 as quantize_model
+                from rwkv7_hf.native_quant_mm8 import (
+                    quantize_model_mm8 as quantize_model,
+                )
             else:
-                from rwkv7_hf.native_quant_mm4 import quantize_model_mm4 as quantize_model
+                from rwkv7_hf.native_quant_mm4 import (
+                    quantize_model_mm4 as quantize_model,
+                )
             replaced = quantize_model(
                 model,
                 min_params=int(getattr(args, "native_quant_min_params", 1_000_000)),
@@ -472,7 +585,9 @@ def load_model(args: argparse.Namespace, dtype: torch.dtype, model_path: str | N
     try:
         from transformers import Qwen3_5ForCausalLM
     except ImportError as exc:
-        raise RuntimeError("installed Transformers does not provide Qwen3_5ForCausalLM") from exc
+        raise RuntimeError(
+            "installed Transformers does not provide Qwen3_5ForCausalLM"
+        ) from exc
     model = Qwen3_5ForCausalLM.from_pretrained(args.model, **kwargs).eval()
     if getattr(args, "qwen_conv_backend", "auto") == "fla_triton":
         try:
@@ -499,14 +614,18 @@ def _operator_origin(value: Any) -> str:
 
 
 def _origin_is(origin: str, prefixes: tuple[str, ...]) -> bool:
-    return any(origin == prefix or origin.startswith(prefix + ".") for prefix in prefixes)
+    return any(
+        origin == prefix or origin.startswith(prefix + ".") for prefix in prefixes
+    )
 
 
 _QWEN35_FLA_TRITON_CONV_PREFIXES = (
     "bench.qwen35_fla_triton_conv",
     "qwen35_fla_triton_conv",
 )
-_QWEN35_ACCELERATED_CONV_PREFIXES = ("causal_conv1d",) + _QWEN35_FLA_TRITON_CONV_PREFIXES
+_QWEN35_ACCELERATED_CONV_PREFIXES = (
+    "causal_conv1d",
+) + _QWEN35_FLA_TRITON_CONV_PREFIXES
 
 
 def qwen_fla_operator_contract(model) -> dict[str, Any]:
@@ -535,22 +654,45 @@ def qwen_fla_operator_contract(model) -> dict[str, Any]:
             ):
                 layers.append((name, module))
 
-    prefill_origins = sorted({_operator_origin(getattr(layer, "chunk_gated_delta_rule", None)) for _, layer in layers})
+    prefill_origins = sorted(
+        {
+            _operator_origin(getattr(layer, "chunk_gated_delta_rule", None))
+            for _, layer in layers
+        }
+    )
     decode_origins = sorted(
-        {_operator_origin(getattr(layer, "recurrent_gated_delta_rule", None)) for _, layer in layers}
+        {
+            _operator_origin(getattr(layer, "recurrent_gated_delta_rule", None))
+            for _, layer in layers
+        }
     )
     conv_update_origins = sorted(
-        {_operator_origin(getattr(layer, "causal_conv1d_update", None)) for _, layer in layers}
+        {
+            _operator_origin(getattr(layer, "causal_conv1d_update", None))
+            for _, layer in layers
+        }
     )
-    conv_prefill_origins = sorted({_operator_origin(getattr(layer, "causal_conv1d_fn", None)) for _, layer in layers})
-    norm_origins = sorted({_operator_origin(layer.norm) for _, layer in layers if hasattr(layer, "norm")})
+    conv_prefill_origins = sorted(
+        {
+            _operator_origin(getattr(layer, "causal_conv1d_fn", None))
+            for _, layer in layers
+        }
+    )
+    norm_origins = sorted(
+        {_operator_origin(layer.norm) for _, layer in layers if hasattr(layer, "norm")}
+    )
 
     prefill_fla_layers = sum(
-        _origin_is(_operator_origin(getattr(layer, "chunk_gated_delta_rule", None)), ("fla",))
+        _origin_is(
+            _operator_origin(getattr(layer, "chunk_gated_delta_rule", None)), ("fla",)
+        )
         for _, layer in layers
     )
     decode_fla_layers = sum(
-        _origin_is(_operator_origin(getattr(layer, "recurrent_gated_delta_rule", None)), ("fla",))
+        _origin_is(
+            _operator_origin(getattr(layer, "recurrent_gated_delta_rule", None)),
+            ("fla",),
+        )
         for _, layer in layers
     )
     conv_update_fused_layers = sum(
@@ -569,7 +711,8 @@ def qwen_fla_operator_contract(model) -> dict[str, Any]:
         for _, layer in layers
     )
     norm_fla_layers = sum(
-        hasattr(layer, "norm") and _origin_is(_operator_origin(layer.norm), ("fla",)) for _, layer in layers
+        hasattr(layer, "norm") and _origin_is(_operator_origin(layer.norm), ("fla",))
+        for _, layer in layers
     )
 
     total = len(layers)
@@ -591,9 +734,13 @@ def qwen_fla_operator_contract(model) -> dict[str, Any]:
 
     conv_backend = "fallback"
     conv_origins = conv_prefill_origins + conv_update_origins
-    if conv_origins and all(_origin_is(origin, ("causal_conv1d",)) for origin in conv_origins):
+    if conv_origins and all(
+        _origin_is(origin, ("causal_conv1d",)) for origin in conv_origins
+    ):
         conv_backend = "causal_conv1d"
-    elif conv_origins and all(_origin_is(origin, _QWEN35_FLA_TRITON_CONV_PREFIXES) for origin in conv_origins):
+    elif conv_origins and all(
+        _origin_is(origin, _QWEN35_FLA_TRITON_CONV_PREFIXES) for origin in conv_origins
+    ):
         conv_backend = "fla_triton"
     elif not conv_missing:
         conv_backend = "mixed_accelerated"
@@ -635,7 +782,9 @@ def enforce_qwen_backend(model, args: argparse.Namespace) -> dict[str, Any]:
             "flash-linear-attention, PyTorch, and Triton stack."
         )
     if args.qwen_backend == "torch" and contract["qwen_operator_contract_pass"]:
-        raise RuntimeError("Qwen3.5 torch backend was requested but FLA operators remain bound")
+        raise RuntimeError(
+            "Qwen3.5 torch backend was requested but FLA operators remain bound"
+        )
     requested_conv = str(getattr(args, "qwen_conv_backend", "auto"))
     effective_conv = str(contract.get("qwen_conv_backend_effective", "fallback"))
     if requested_conv != "auto" and effective_conv != requested_conv:
@@ -692,15 +841,21 @@ def last_rwkv_prefill_backend(model) -> str | None:
     return getattr(model, "_rwkv7_last_fast_prefill_backend", None)
 
 
-def step_function(model, model_kind: str, batch_size: int) -> tuple[Callable[..., Any], str]:
+def step_function(
+    model, model_kind: str, batch_size: int
+) -> tuple[Callable[..., Any], str]:
     if model_kind == "rwkv":
         fast = getattr(model, "rwkv7_forward_token", None)
         if fast is None and batch_size == 1:
             fast = getattr(model, "rwkv7_forward_one", None)
         if fast is not None:
-            return lambda token, state: fast(token, past_key_values=state), "rwkv_fast_token"
+            return lambda token, state: fast(
+                token, past_key_values=state
+            ), "rwkv_fast_token"
     return (
-        lambda token, state: model(token, past_key_values=state, use_cache=True, logits_to_keep=1),
+        lambda token, state: model(
+            token, past_key_values=state, use_cache=True, logits_to_keep=1
+        ),
         "module_call",
     )
 
@@ -769,7 +924,9 @@ def timed_prefill(args: argparse.Namespace, model, ids) -> tuple[float, float]:
     return float(details["median_s"]), float(details["tokps"])
 
 
-def decode_once(args: argparse.Namespace, model, ids, step: Callable[..., Any]) -> tuple[float, Any]:
+def decode_once(
+    args: argparse.Namespace, model, ids, step: Callable[..., Any]
+) -> tuple[float, Any]:
     with torch.inference_mode():
         out = forward_prefill(args, model, ids)
         state = out.past_key_values
@@ -793,13 +950,19 @@ def _cache_sequence_length(cache) -> int:
     return int(value.item()) if isinstance(value, torch.Tensor) else int(value)
 
 
-def _cache_tensor_pointer_signature(cache) -> tuple[tuple[str, int, tuple[int, ...]], ...]:
+def _cache_tensor_pointer_signature(
+    cache,
+) -> tuple[tuple[str, int, tuple[int, ...]], ...]:
     signature: list[tuple[str, int, tuple[int, ...]]] = []
     for layer_index, layer in enumerate(cache.layers):
         for name, value in vars(layer).items():
             if isinstance(value, torch.Tensor) and value.numel() > 0:
                 signature.append(
-                    (f"layers.{layer_index}.{name}", int(value.data_ptr()), tuple(value.shape))
+                    (
+                        f"layers.{layer_index}.{name}",
+                        int(value.data_ptr()),
+                        tuple(value.shape),
+                    )
                 )
     return tuple(sorted(signature))
 
@@ -857,7 +1020,9 @@ class QwenStaticCacheInductorCudaGraphDecode:
 
     def __init__(self, args: argparse.Namespace, model, ids) -> None:
         if not str(args.device).startswith("cuda") or not torch.cuda.is_available():
-            raise RuntimeError("static_cache_inductor_cudagraph requires a live CUDA device")
+            raise RuntimeError(
+                "static_cache_inductor_cudagraph requires a live CUDA device"
+            )
         try:
             from transformers import CompileConfig, StaticCache
         except ImportError as exc:
@@ -868,9 +1033,7 @@ class QwenStaticCacheInductorCudaGraphDecode:
         self.args = args
         self.model = model
         self.ids = ids
-        self.compile_mode = str(
-            getattr(args, "qwen_compile_mode", "max-autotune")
-        )
+        self.compile_mode = str(getattr(args, "qwen_compile_mode", "max-autotune"))
         self.max_cache_len = (
             int(args.prompt_tokens) + int(args.warmup) + int(args.decode_tokens)
         )
@@ -926,7 +1089,9 @@ class QwenStaticCacheInductorCudaGraphDecode:
                 f"cudagraph_skips={self.cudagraph_skip_count}"
             )
         if self.cudagraph_recorded_non_static_inputs <= 0:
-            raise RuntimeError("Inductor did not record a CUDA Graph node for Qwen decode")
+            raise RuntimeError(
+                "Inductor did not record a CUDA Graph node for Qwen decode"
+            )
 
         profile_prefill = self.prefill(ids)
         profile_token = profile_prefill.logits[:, -1:].argmax(dim=-1)
@@ -956,21 +1121,27 @@ class QwenStaticCacheInductorCudaGraphDecode:
         self.cuda_graph_launch_count = sum(int(event.count) for event in graph_events)
         self.cuda_graph_verified = self.cuda_graph_launch_count > 0
         if not self.cuda_graph_verified:
-            raise RuntimeError("profiler did not observe cudaGraphLaunch for Qwen decode")
+            raise RuntimeError(
+                "profiler did not observe cudaGraphLaunch for Qwen decode"
+            )
 
         self.prefill(ids)
         final_pointer_signature = _cache_tensor_pointer_signature(self.cache)
         self.cache_pointer_stable = initial_pointer_signature == final_pointer_signature
         self.cache_tensor_pointer_count = len(final_pointer_signature)
         if not self.cache_pointer_stable:
-            raise RuntimeError("StaticCache tensor pointers changed across reset/prefill")
+            raise RuntimeError(
+                "StaticCache tensor pointers changed across reset/prefill"
+            )
         self.setup_s = time.perf_counter() - setup_started
 
     def prefill(self, ids):
         with torch.inference_mode():
             self.cache.reset()
             if _cache_sequence_length(self.cache) != 0:
-                raise RuntimeError("StaticCache reset did not restore sequence length to zero")
+                raise RuntimeError(
+                    "StaticCache reset did not restore sequence length to zero"
+                )
             out = forward_prefill(
                 self.args,
                 self.model,
@@ -978,7 +1149,9 @@ class QwenStaticCacheInductorCudaGraphDecode:
                 past_key_values=self.cache,
             )
         if out.past_key_values is not self.cache:
-            raise RuntimeError("chunked StaticCache prefill replaced the persistent cache object")
+            raise RuntimeError(
+                "chunked StaticCache prefill replaced the persistent cache object"
+            )
         actual = _cache_sequence_length(self.cache)
         expected = int(ids.shape[1])
         if actual != expected:
@@ -1115,7 +1288,9 @@ class QwenStaticCacheRawCudaGraphDecode:
         try:
             from transformers import StaticCache
         except ImportError as exc:
-            raise RuntimeError("installed Transformers does not provide StaticCache") from exc
+            raise RuntimeError(
+                "installed Transformers does not provide StaticCache"
+            ) from exc
 
         self.max_cache_len = (
             int(args.prompt_tokens) + int(args.warmup) + int(args.decode_tokens)
@@ -1156,8 +1331,11 @@ class QwenStaticCacheRawCudaGraphDecode:
         self.graph = torch.cuda.CUDAGraph()
         capture_started = time.perf_counter()
         self.capture_stream.wait_stream(current)
-        with torch.inference_mode(), torch.cuda.graph(
-            self.graph, stream=self.capture_stream, capture_error_mode="global"
+        with (
+            torch.inference_mode(),
+            torch.cuda.graph(
+                self.graph, stream=self.capture_stream, capture_error_mode="global"
+            ),
         ):
             captured = model(
                 self.static_token,
@@ -1243,7 +1421,9 @@ class QwenStaticCacheRawCudaGraphDecode:
         actual = _cache_sequence_length(self.cache)
         expected = int(ids.shape[1]) + steps
         if actual != expected:
-            raise RuntimeError(f"raw graph cache length mismatch: {actual} != {expected}")
+            raise RuntimeError(
+                f"raw graph cache length mismatch: {actual} != {expected}"
+            )
         self._refresh_pointer_gate()
         return torch.cat(tokens, dim=1)
 
@@ -1259,7 +1439,9 @@ class QwenStaticCacheRawCudaGraphDecode:
         actual = _cache_sequence_length(self.cache)
         expected = int(ids.shape[1]) + steps
         if actual != expected:
-            raise RuntimeError(f"raw graph cache length mismatch: {actual} != {expected}")
+            raise RuntimeError(
+                f"raw graph cache length mismatch: {actual} != {expected}"
+            )
         self._refresh_pointer_gate()
         return logits
 
@@ -1279,7 +1461,9 @@ class QwenStaticCacheRawCudaGraphDecode:
         expected = self.max_cache_len
         actual = _cache_sequence_length(self.cache)
         if actual != expected:
-            raise RuntimeError(f"timed raw graph cache length mismatch: {actual} != {expected}")
+            raise RuntimeError(
+                f"timed raw graph cache length mismatch: {actual} != {expected}"
+            )
         self._refresh_pointer_gate()
         return elapsed
 
@@ -1413,8 +1597,7 @@ def _logits_trace_metrics(
         }
     cosines = [_minimum_cosine(a, b) for a, b in zip(left, right)]
     max_abs = max(
-        float((a.float() - b.float()).abs().max().item())
-        for a, b in zip(left, right)
+        float((a.float() - b.float()).abs().max().item()) for a, b in zip(left, right)
     )
     return {
         "finite": True,
@@ -1422,8 +1605,7 @@ def _logits_trace_metrics(
         "max_abs_diff": max_abs,
         "worst_index": min(range(len(cosines)), key=cosines.__getitem__),
         "greedy_match": all(
-            torch.equal(a.argmax(dim=-1), b.argmax(dim=-1))
-            for a, b in zip(left, right)
+            torch.equal(a.argmax(dim=-1), b.argmax(dim=-1)) for a, b in zip(left, right)
         ),
     }
 
@@ -1458,18 +1640,14 @@ def verify_qwen_cuda_graph_parity(
     candidate_tokens = runner.candidate_greedy_tokens(probe_ids, parity_steps)
     static_eager_match = bool(torch.equal(eager_tokens, static_eager_tokens))
     greedy_match = bool(torch.equal(eager_tokens, candidate_tokens))
-    same_cache_greedy_match = bool(
-        torch.equal(static_eager_tokens, candidate_tokens)
-    )
+    same_cache_greedy_match = bool(torch.equal(static_eager_tokens, candidate_tokens))
     prefill_next_token_match = bool(
         torch.equal(eager_tokens[:, :1], candidate_tokens[:, :1])
     )
     logits_probe_tokens = min(
         int(getattr(args, "qwen_graph_probe_tokens", 16)), parity_steps
     )
-    dynamic_logits = _eager_logits_trace(
-        args, model, probe_ids, logits_probe_tokens
-    )
+    dynamic_logits = _eager_logits_trace(args, model, probe_ids, logits_probe_tokens)
     static_logits = _eager_logits_trace(
         args,
         model,
@@ -1477,9 +1655,7 @@ def verify_qwen_cuda_graph_parity(
         logits_probe_tokens,
         cache=runner.cache,
     )
-    candidate_logits = _candidate_logits_trace(
-        runner, probe_ids, logits_probe_tokens
-    )
+    candidate_logits = _candidate_logits_trace(runner, probe_ids, logits_probe_tokens)
     dynamic_candidate = _logits_trace_metrics(dynamic_logits, candidate_logits)
     dynamic_static = _logits_trace_metrics(dynamic_logits, static_logits)
     same_cache = _logits_trace_metrics(static_logits, candidate_logits)
@@ -1523,9 +1699,7 @@ def verify_qwen_cuda_graph_parity(
         "qwen_dynamic_static_logits_min_cosine": dynamic_static["min_cosine"],
         "qwen_dynamic_static_logits_max_abs_diff": dynamic_static["max_abs_diff"],
         "qwen_dynamic_static_logits_finite": bool(dynamic_static["finite"]),
-        "qwen_dynamic_static_logits_worst_index": int(
-            dynamic_static["worst_index"]
-        ),
+        "qwen_dynamic_static_logits_worst_index": int(dynamic_static["worst_index"]),
         "qwen_same_cache_logits_min_cosine": same_cache["min_cosine"],
         "qwen_same_cache_logits_max_abs_diff": same_cache["max_abs_diff"],
         "qwen_same_cache_logits_finite": bool(same_cache["finite"]),
@@ -1534,9 +1708,7 @@ def verify_qwen_cuda_graph_parity(
         "qwen_static_compiled_logits_min_cosine": same_cache["min_cosine"],
         "qwen_static_compiled_logits_max_abs_diff": same_cache["max_abs_diff"],
         "qwen_static_compiled_logits_finite": bool(same_cache["finite"]),
-        "qwen_static_compiled_logits_worst_index": int(
-            same_cache["worst_index"]
-        ),
+        "qwen_static_compiled_logits_worst_index": int(same_cache["worst_index"]),
     }
 
 
@@ -1544,10 +1716,7 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
     qwen_optimization = str(
         getattr(args, "qwen_decode_optimization", "module_call_dynamic")
     )
-    if (
-        args.model_kind == "qwen35"
-        and qwen_optimization in QWEN_STATIC_GRAPH_ROUTES
-    ):
+    if args.model_kind == "qwen35" and qwen_optimization in QWEN_STATIC_GRAPH_ROUTES:
         runner = None
         try:
             runner_class = (
@@ -1615,8 +1784,10 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
         ),
         "qwen_cuda_graph_requested": False if args.model_kind == "qwen35" else None,
         "qwen_cuda_graph_effective": False if args.model_kind == "qwen35" else None,
-        "qwen_decode_cuda_graph_verified": False if args.model_kind == "qwen35" else None,
-            "qwen_graph_parity_verified": None,
+        "qwen_decode_cuda_graph_verified": False
+        if args.model_kind == "qwen35"
+        else None,
+        "qwen_graph_parity_verified": None,
         "qwen_graph_prefill_next_token_match": None,
         "qwen_graph_greedy_match": None,
         "qwen_same_cache_greedy_match": None,
@@ -1658,7 +1829,9 @@ def timed_decode_details(args: argparse.Namespace, model, ids) -> dict[str, Any]
     }
 
 
-def timed_decode(args: argparse.Namespace, model, ids) -> tuple[float, str, str | None, str]:
+def timed_decode(
+    args: argparse.Namespace, model, ids
+) -> tuple[float, str, str | None, str]:
     details = timed_decode_details(args, model, ids)
     return (
         float(details["median_s"]),
@@ -1671,18 +1844,30 @@ def timed_decode(args: argparse.Namespace, model, ids) -> tuple[float, str, str 
 def save_backend_probe(args: argparse.Namespace, model, ids) -> dict[str, Any]:
     """Save deterministic logits and greedy tokens for cross-process checks."""
 
-    step, _ = step_function(model, args.model_kind, 1)
-    probe_ids = ids[:1]
-    greedy_tokens: list[int] = []
+    probe_batch_size = int(getattr(args, "probe_batch_size", 1))
+    step, _ = step_function(model, args.model_kind, probe_batch_size)
+    probe_ids = _distinct_batch_probe_ids(
+        ids[:probe_batch_size], int(model.config.vocab_size)
+    )
+    greedy_tokens: list[Any] = []
+    decode_logits_finite_by_batch = torch.ones(probe_batch_size, dtype=torch.bool)
     with torch.inference_mode():
         out = forward_prefill(args, model, probe_ids)
         state = out.past_key_values
         prompt_logits = out.logits[:, -1].float().cpu()
         token = out.logits[:, -1:].argmax(dim=-1)
         for _ in range(args.probe_tokens):
-            greedy_tokens.append(int(token[0, 0].item()))
+            if probe_batch_size == 1:
+                greedy_tokens.append(int(token[0, 0].item()))
+            else:
+                greedy_tokens.append(
+                    [int(value) for value in token[:, 0].detach().cpu().tolist()]
+                )
             out = step(token, state)
             state = out.past_key_values
+            decode_logits_finite_by_batch &= torch.isfinite(
+                out.logits[:, -1].float().cpu()
+            ).all(dim=-1)
             token = out.logits[:, -1:].argmax(dim=-1)
         final_logits = out.logits[:, -1].float().cpu()
 
@@ -1690,10 +1875,20 @@ def save_backend_probe(args: argparse.Namespace, model, ids) -> dict[str, Any]:
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
+            "probe_schema_version": 2,
+            "benchmark_repository_commit": os.environ.get("REPOSITORY_COMMIT"),
+            "model_pair": args.model_pair,
+            "model_size_label": args.model_size_label,
+            "model_id_or_path": args.model,
+            "probe_output": str(output.resolve()),
             "input_ids": probe_ids.cpu(),
             "prompt_logits": prompt_logits,
             "final_logits": final_logits,
             "greedy_tokens": torch.tensor(greedy_tokens, dtype=torch.int64),
+            "decode_logits_finite_by_batch": decode_logits_finite_by_batch,
+            "decode_logits_all_finite": bool(
+                decode_logits_finite_by_batch.all().item()
+            ),
             "qwen_backend_requested": args.qwen_backend,
         },
         output,
@@ -1701,6 +1896,12 @@ def save_backend_probe(args: argparse.Namespace, model, ids) -> dict[str, Any]:
     return {
         "probe_output": str(output),
         "probe_tokens": args.probe_tokens,
+        "probe_batch_size": probe_batch_size,
+        "probe_distinct_batch_prompts": probe_batch_size > 1,
+        "probe_decode_logits_all_finite": bool(
+            decode_logits_finite_by_batch.all().item()
+        ),
+        "probe_decode_logits_finite_by_batch": (decode_logits_finite_by_batch.tolist()),
         "probe_greedy_tokens": greedy_tokens,
     }
 
@@ -1711,20 +1912,27 @@ def qwen_official_fast_path_environment() -> dict[str, bool]:
     try:
         from transformers.models.qwen3_5.modeling_qwen3_5 import is_fast_path_available
 
-        available = is_fast_path_available() if callable(is_fast_path_available) else is_fast_path_available
+        available = (
+            is_fast_path_available()
+            if callable(is_fast_path_available)
+            else is_fast_path_available
+        )
         fast_path_available = bool(available)
     except Exception:
         fast_path_available = False
     return {
         "qwen_fast_path_available": fast_path_available,
         "qwen_fla_importable": importlib.util.find_spec("fla") is not None,
-        "qwen_causal_conv1d_importable": importlib.util.find_spec("causal_conv1d") is not None,
+        "qwen_causal_conv1d_importable": importlib.util.find_spec("causal_conv1d")
+        is not None,
         "qwen_force_torch_disabled": not QWEN_FORCE_TORCH,
     }
 
 
 def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]:
-    qwen_environment = qwen_official_fast_path_environment() if args.model_kind == "qwen35" else {}
+    qwen_environment = (
+        qwen_official_fast_path_environment() if args.model_kind == "qwen35" else {}
+    )
     self_chunk_h_bv_effective = None
     self_chunk_h_bc_effective = None
     scan_block_m_effective = None
@@ -1739,11 +1947,13 @@ def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]
             self_chunk_size = _native_prefill_self_chunk_size(
                 int(args.batch_size), int(args.prompt_tokens)
             )
-            self_chunk_h_bv_effective, self_chunk_h_bc_effective = resolve_chunk_h_tiles(
-                torch.cuda.current_device(),
-                self_chunk_size,
-                batch_size=int(args.batch_size),
-                tokens=int(args.prompt_tokens),
+            self_chunk_h_bv_effective, self_chunk_h_bc_effective = (
+                resolve_chunk_h_tiles(
+                    torch.cuda.current_device(),
+                    self_chunk_size,
+                    batch_size=int(args.batch_size),
+                    tokens=int(args.prompt_tokens),
+                )
             )
             config = getattr(model, "config", None)
             hidden_size = int(getattr(config, "hidden_size"))
@@ -1761,11 +1971,17 @@ def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]
             pass
     capability = None
     if args.device.startswith("cuda") and torch.cuda.is_available():
-        capability = list(torch.cuda.get_device_capability(cuda_device_index(args.device)))
+        capability = list(
+            torch.cuda.get_device_capability(cuda_device_index(args.device))
+        )
     arch = f"sm_{capability[0]}{capability[1]}" if capability is not None else None
     qwen_device_route = None
     if args.model_kind == "qwen35" and arch is not None:
-        qwen_device_route = "fla_triton_sm70" if capability == [7, 0] else f"fla_runtime_dispatch_{arch}"
+        qwen_device_route = (
+            "fla_triton_sm70"
+            if capability == [7, 0]
+            else f"fla_runtime_dispatch_{arch}"
+        )
     return {
         "device": device_name(args.device),
         "gpu_compute_capability": capability,
@@ -1778,17 +1994,23 @@ def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]
         "fla_version": package_version("flash-linear-attention"),
         "causal_conv1d_version": package_version("causal-conv1d"),
         "qwen_fla_importable": qwen_environment.get("qwen_fla_importable"),
-        "qwen_causal_conv1d_importable": qwen_environment.get("qwen_causal_conv1d_importable"),
+        "qwen_causal_conv1d_importable": qwen_environment.get(
+            "qwen_causal_conv1d_importable"
+        ),
         "qwen_force_torch": QWEN_FORCE_TORCH,
         "qwen_fast_path_available": qwen_environment.get("qwen_fast_path_available"),
         "qwen_fla_expected_device_route": qwen_device_route,
         "rwkv_fast_token_backend_requested": os.environ.get("RWKV7_FAST_TOKEN_BACKEND"),
-        "rwkv_native_model_backend_requested": os.environ.get("RWKV7_NATIVE_MODEL_BACKEND"),
+        "rwkv_native_model_backend_requested": os.environ.get(
+            "RWKV7_NATIVE_MODEL_BACKEND"
+        ),
         "rwkv_fast_token_quant_requested": os.environ.get("RWKV7_FAST_TOKEN_QUANT"),
         "rwkv_fast_prefill_requested": os.environ.get("RWKV7_FAST_PREFILL"),
         "rwkv_fast_prefill_quant_requested": os.environ.get("RWKV7_FAST_PREFILL_QUANT"),
         "rwkv_prefill_graph_requested": os.environ.get("RWKV7_NATIVE_PREFILL_GRAPH"),
-        "rwkv_prefill_fused_scan_requested": os.environ.get("RWKV7_NATIVE_PREFILL_FUSED_SCAN"),
+        "rwkv_prefill_fused_scan_requested": os.environ.get(
+            "RWKV7_NATIVE_PREFILL_FUSED_SCAN"
+        ),
         "rwkv_prefill_global_fp16_accum_requested": os.environ.get(
             "RWKV7_NATIVE_PREFILL_GLOBAL_FP16_ACCUM"
         ),
@@ -1799,7 +2021,9 @@ def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]
             "RWKV7_NATIVE_PREFILL_EXTERNAL_QUANT_GRAPH"
         ),
         "rwkv_prefill_blas_requested": os.environ.get("RWKV7_NATIVE_PREFILL_BLAS"),
-        "rwkv_prefill_self_chunk_requested": os.environ.get("RWKV7_NATIVE_PREFILL_SELF_CHUNK"),
+        "rwkv_prefill_self_chunk_requested": os.environ.get(
+            "RWKV7_NATIVE_PREFILL_SELF_CHUNK"
+        ),
         "rwkv_prefill_self_chunk_min_tokens_requested": os.environ.get(
             "RWKV7_NATIVE_PREFILL_SELF_CHUNK_MIN_TOKENS"
         ),
@@ -1817,7 +2041,9 @@ def environment_metadata(args: argparse.Namespace, model=None) -> dict[str, Any]
         ),
         "rwkv_prefill_self_chunk_h_bv_effective": self_chunk_h_bv_effective,
         "rwkv_prefill_self_chunk_h_bc_effective": self_chunk_h_bc_effective,
-        "rwkv_prefill_scan_block_m_requested": os.environ.get("RWKV7_NATIVE_PREFILL_SCAN_BLOCK_M"),
+        "rwkv_prefill_scan_block_m_requested": os.environ.get(
+            "RWKV7_NATIVE_PREFILL_SCAN_BLOCK_M"
+        ),
         "rwkv_prefill_scan_block_m_effective": scan_block_m_effective,
         "rwkv_prefill_scan_num_warps_requested": os.environ.get(
             "RWKV7_NATIVE_PREFILL_SCAN_NUM_WARPS"
@@ -1852,7 +2078,11 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
     config = getattr(quantizer, "quantization_config", None)
     if config is None:
         config = getattr(getattr(model, "config", None), "quantization_config", None)
-    getter = config.get if isinstance(config, dict) else lambda name, default=None: getattr(config, name, default)
+    getter = (
+        config.get
+        if isinstance(config, dict)
+        else lambda name, default=None: getattr(config, name, default)
+    )
     if args.quantization == "bnb8_a8w8_head":
         backend = "bitsandbytes+rwkv_native"
     elif args.quantization.startswith("bnb"):
@@ -1910,14 +2140,22 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
             from rwkv7_hf import native_jit as native_jit_module
 
     def bnb8_flag(env_name: str, policy_name: str) -> bool | None:
-        if args.quantization not in {"bnb8", "bnb8_a8w8_head"} or native_jit_module is None:
+        if (
+            args.quantization not in {"bnb8", "bnb8_a8w8_head"}
+            or native_jit_module is None
+        ):
             return None
         return bool(native_jit_module._native_bnb8_policy_flag(env_name, policy_name))
 
     def bnb8_block(env_name: str, policy_name: str, fallback: int) -> int | None:
-        if args.quantization not in {"bnb8", "bnb8_a8w8_head"} or native_jit_module is None:
+        if (
+            args.quantization not in {"bnb8", "bnb8_a8w8_head"}
+            or native_jit_module is None
+        ):
             return None
-        return int(native_jit_module._native_bnb8_policy_block(env_name, policy_name, fallback))
+        return int(
+            native_jit_module._native_bnb8_policy_block(env_name, policy_name, fallback)
+        )
 
     return {
         "bnb_int8_threshold": (
@@ -1926,7 +2164,9 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
             else None
         ),
         "rwkv_bnb_skip_policy": (
-            getattr(model, "_rwkv7_bnb_skip_policy", None) if args.model_kind == "rwkv" else None
+            getattr(model, "_rwkv7_bnb_skip_policy", None)
+            if args.model_kind == "rwkv"
+            else None
         ),
         "rwkv_bnb_prefill_value_stride": (
             int(os.environ.get("RWKV7_BNB_PREFILL_VALUE_STRIDE", "8"))
@@ -1957,7 +2197,9 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
             "RWKV7_NATIVE_BNB8_FFN_MIX_BLOCK", "native_bnb8_ffn_mix_block", 1024
         ),
         "quantization_backend": backend,
-        "quantized_modules": getattr(model, "_rwkv7_cross_model_quant_replaced_modules", None),
+        "quantized_modules": getattr(
+            model, "_rwkv7_cross_model_quant_replaced_modules", None
+        ),
         "native_quant_block_modules": getattr(
             model, "_rwkv7_native_mm_block_replaced_modules", None
         ),
@@ -1984,9 +2226,7 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
             else None
         ),
         "mm4_fused_max_rows": (
-            mm4_launch.get("fused_max_rows")
-            if args.quantization == "mm4"
-            else None
+            mm4_launch.get("fused_max_rows") if args.quantization == "mm4" else None
         ),
         "mm4_gemv_block_pairs": (
             mm4_launch.get("gemv_block_pairs") if args.quantization == "mm4" else None
@@ -1998,32 +2238,32 @@ def effective_quantization_metadata(model, args: argparse.Namespace) -> dict[str
             mm4_launch.get("dot_min_rows") if args.quantization == "mm4" else None
         ),
         "mm4_dot_block_b": (
-            mm4_launch.get("dot_block_b")
-            if args.quantization == "mm4"
-            else None
+            mm4_launch.get("dot_block_b") if args.quantization == "mm4" else None
         ),
         "mm4_dot_block_pairs": (
-            mm4_launch.get("dot_block_pairs")
-            if args.quantization == "mm4"
-            else None
+            mm4_launch.get("dot_block_pairs") if args.quantization == "mm4" else None
         ),
         "mm4_dot_block_n": (
-            mm4_launch.get("dot_block_n")
-            if args.quantization == "mm4"
-            else None
+            mm4_launch.get("dot_block_n") if args.quantization == "mm4" else None
         ),
         "mm4_dot_warps": (
-            mm4_launch.get("dot_warps")
-            if args.quantization == "mm4"
-            else None
+            mm4_launch.get("dot_warps") if args.quantization == "mm4" else None
         ),
         "native_quant_kernel_active": native_quant,
     }
 
 
 _QWEN35_FAST_BINDING_PREFIXES = {
-    "causal_conv1d_fn": ("causal_conv1d.", "bench.qwen35_fla_triton_conv", "qwen35_fla_triton_conv"),
-    "causal_conv1d_update": ("causal_conv1d.", "bench.qwen35_fla_triton_conv", "qwen35_fla_triton_conv"),
+    "causal_conv1d_fn": (
+        "causal_conv1d.",
+        "bench.qwen35_fla_triton_conv",
+        "qwen35_fla_triton_conv",
+    ),
+    "causal_conv1d_update": (
+        "causal_conv1d.",
+        "bench.qwen35_fla_triton_conv",
+        "qwen35_fla_triton_conv",
+    ),
     "chunk_gated_delta_rule": ("fla.",),
     "recurrent_gated_delta_rule": ("fla.",),
 }
@@ -2062,6 +2302,16 @@ def qwen35_fast_path_bindings(model) -> dict[str, Any]:
 
 
 def validate_loaded_model(args: argparse.Namespace, model) -> None:
+    if args.model_kind == "rwkv" and str(
+        getattr(args, "rwkv_implementation", "auto")
+    ) == "wrapper_repo":
+        effective = getattr(model, "_rwkv7_benchmark_implementation_effective", None)
+        if effective != "wrapper_repo" or type(model).__name__ != "RWKV7ForCausalLM":
+            raise RuntimeError(
+                "explicit RWKV repository wrapper was required but the loaded model "
+                f"is {type(model).__module__}.{type(model).__name__} "
+                f"(effective={effective!r})"
+            )
     if args.model_kind != "qwen35" or not args.require_qwen_fast_path:
         return
     binding_check = qwen35_fast_path_bindings(model)
@@ -2072,7 +2322,9 @@ def validate_loaded_model(args: argparse.Namespace, model) -> None:
         )
 
 
-def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any]) -> None:
+def validate_qwen_result_contract(
+    args: argparse.Namespace, row: dict[str, Any]
+) -> None:
     """Reject a row unless it proves the exact requested Qwen fast path.
 
     The official comparison lane is selected by the existing public CLI
@@ -2082,7 +2334,9 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
     causal-conv main table.
     """
 
-    if args.model_kind != "qwen35" or not bool(getattr(args, "require_qwen_fast_path", False)):
+    if args.model_kind != "qwen35" or not bool(
+        getattr(args, "require_qwen_fast_path", False)
+    ):
         return
     required: dict[str, Any] = {
         "status": "pass",
@@ -2098,9 +2352,7 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                 "qwen_causal_conv1d_importable": True,
             }
         )
-    qwen_route = str(
-        getattr(args, "qwen_decode_optimization", "module_call_dynamic")
-    )
+    qwen_route = str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
     if qwen_route in QWEN_STATIC_GRAPH_ROUTES:
         required.update(
             {
@@ -2150,6 +2402,7 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
             required["qwen_graph_scope"] = (
                 "single_token_hf_qwen_forward_argmax_token_copy"
             )
+
     def matches_expected(actual: Any, expected: Any) -> bool:
         if isinstance(expected, bool):
             return type(actual) is bool and actual is expected
@@ -2161,7 +2414,10 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
         if not matches_expected(row.get(field), expected)
     ]
     if mismatches:
-        raise RuntimeError("Qwen3.5 result row failed the requested fast-path contract: " + "; ".join(mismatches))
+        raise RuntimeError(
+            "Qwen3.5 result row failed the requested fast-path contract: "
+            + "; ".join(mismatches)
+        )
     if qwen_route in QWEN_STATIC_GRAPH_ROUTES:
         for field in (
             "qwen_graph_logits_min_cosine",
@@ -2174,23 +2430,17 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
                     f"{field}={value!r} (expected finite cross-cache telemetry)"
                 )
         same_cache = row.get("qwen_same_cache_logits_min_cosine")
-        if (
-            not _is_finite_real_number(same_cache)
-            or same_cache < 0.9999
-        ):
+        if not _is_finite_real_number(same_cache) or same_cache < 0.9999:
             raise RuntimeError(
                 "Qwen3.5 result row failed the requested CUDA Graph contract: "
                 f"qwen_same_cache_logits_min_cosine={same_cache!r} "
                 "(expected >=0.9999)"
             )
         launches = row.get("qwen_cuda_graph_launch_count")
-        launch_count_valid = (
-            _is_finite_real_number(launches)
-            and (
-                launches == 1
-                if qwen_route == "static_cache_raw_cudagraph"
-                else launches > 0
-            )
+        launch_count_valid = _is_finite_real_number(launches) and (
+            launches == 1
+            if qwen_route == "static_cache_raw_cudagraph"
+            else launches > 0
         )
         if not launch_count_valid:
             expected_launches = (
@@ -2203,6 +2453,70 @@ def validate_qwen_result_contract(args: argparse.Namespace, row: dict[str, Any])
             )
 
 
+_RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS = (
+    "ada_wagv_bmm_requested",
+    "ada_wagv_bmm_selected",
+    "ada_wagv_bmm_effective",
+    "ada_wagv_bmm_effective_layer_count",
+    "ada_wagv_bmm_full_model_effective",
+    "sm120_wagv_bmm_g_requested",
+    "sm120_wagv_bmm_g_selected",
+    "sm120_wagv_bmm_g_effective",
+    "sm120_wagv_bmm_g_selected_layers",
+    "sm120_wagv_bmm_g_effective_layers",
+    "sm120_wagv_bmm_g_effective_layer_count",
+    "sm120_wagv_bmm_g_full_model_effective",
+    "sm120_compiled_ffn_requested",
+    "sm120_compiled_ffn_selected",
+    "sm120_compiled_ffn_effective",
+    "sm120_compiled_ffn_selected_layers",
+    "sm120_compiled_ffn_effective_layers",
+    "sm120_compiled_ffn_effective_layer_count",
+    "sm120_compiled_ffn_full_model_effective",
+    "sm120_compiled_ffn_compile_effective",
+    "sm120_compiled_ffn_compile_reused",
+    "sm120_compiled_ffn_unique_graphs",
+    "sm120_compiled_ffn_graph_breaks",
+    "sm120_compiled_ffn_compile_mode",
+    "sm120_compiled_ffn_prewarm_all_finite",
+    "sm120_compiled_ffn_prewarm_min_cosine",
+    "sm120_compiled_ffn_prewarm_argmax_all_equal",
+    "sm120_compiled_ffn_prewarm_max_abs_diff",
+    "sm120_compiled_ffn_prewarm_layer_indices",
+    "sm120_compiled_ffn_prewarm_layer_count",
+)
+
+
+def rwkv_native_graph_decode_route(model, batch_size: int) -> dict[str, Any]:
+    """Return route truth from the exact fixed-batch runner, if present."""
+
+    empty = {
+        f"rwkv_native_graph_{name}": None
+        for name in _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS
+    }
+    getter = getattr(model, "rwkv7_native_graph_runner_copy_stats", None)
+    if not callable(getter):
+        return empty
+    try:
+        runners = getter().get("runners", [])
+        match = next(
+            (
+                item
+                for item in reversed(runners)
+                if int(item.get("batch_size", -1)) == int(batch_size)
+            ),
+            None,
+        )
+    except Exception:
+        return empty
+    if not isinstance(match, dict):
+        return empty
+    return {
+        f"rwkv_native_graph_{name}": match.get(name)
+        for name in _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS
+    }
+
+
 def benchmark_loaded(
     args: argparse.Namespace,
     tokenizer,
@@ -2213,14 +2527,18 @@ def benchmark_loaded(
 ) -> dict[str, Any]:
     qwen_contract = qwen_contract or {}
     input_device = str(next(model.parameters()).device)
-    ids = build_exact_prompt(tokenizer, args.prompt_tokens, args.batch_size, input_device)
+    ids = build_exact_prompt(
+        tokenizer, args.prompt_tokens, args.batch_size, input_device
+    )
 
     if args.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(cuda_device_index(args.device))
     prefill_timing = timed_prefill_details(args, model, ids)
     prefill_s = float(prefill_timing["median_s"])
     prefill_tokps = float(prefill_timing["tokps"])
-    prefill_backend = last_rwkv_prefill_backend(model) if args.model_kind == "rwkv" else None
+    prefill_backend = (
+        last_rwkv_prefill_backend(model) if args.model_kind == "rwkv" else None
+    )
     prefill_clampw_scan = (
         bool(getattr(model, "_rwkv7_native_prefill_clampw_scan_effective", False))
         if args.model_kind == "rwkv"
@@ -2268,6 +2586,11 @@ def benchmark_loaded(
     step_backend = str(decode_timing["step_backend"])
     effective_backend = decode_timing["effective_backend"]
     cache_type = str(decode_timing["cache_type"])
+    rwkv_decode_route = (
+        rwkv_native_graph_decode_route(model, args.batch_size)
+        if args.model_kind == "rwkv"
+        else {}
+    )
     logits_finite = True
     with torch.inference_mode():
         check = forward_prefill(args, model, ids[:, : min(8, ids.shape[1])])
@@ -2276,10 +2599,14 @@ def benchmark_loaded(
         raise RuntimeError("model produced non-finite logits")
     probe_metadata = save_backend_probe(args, model, ids) if args.probe_output else {}
 
-    qwen_bindings = qwen35_fast_path_bindings(model) if args.model_kind == "qwen35" else None
+    qwen_bindings = (
+        qwen35_fast_path_bindings(model) if args.model_kind == "qwen35" else None
+    )
     footprint = model_footprint_mb(model)
     peak = peak_mb(args.device)
-    runtime_working_set = round(max(0.0, peak - footprint), 1) if peak is not None else None
+    runtime_working_set = (
+        round(max(0.0, peak - footprint), 1) if peak is not None else None
+    )
     parameter_metadata = model_parameter_metadata(model, args)
     active_parameters = int(parameter_metadata["active_parameter_count"])
     active_parameter_billions = active_parameters / 1e9
@@ -2289,6 +2616,7 @@ def benchmark_loaded(
         **model_metadata(args, model),
         **environment_metadata(args, model),
         **effective_quantization_metadata(model, args),
+        **rwkv_decode_route,
         **parameter_metadata,
         **qwen_contract,
         **probe_metadata,
@@ -2302,7 +2630,9 @@ def benchmark_loaded(
         "prefill_tokps_per_active_billion": round(
             prefill_tokps / active_parameter_billions, 6
         ),
-        "prefill_active_parameter_tops": round(prefill_tokps * active_parameters / 1e12, 6),
+        "prefill_active_parameter_tops": round(
+            prefill_tokps * active_parameters / 1e12, 6
+        ),
         "decode_sec_median": round(decode_s, 6),
         "decode_sec_median_raw": decode_s,
         "decode_sec_samples": [float(value) for value in decode_timing["samples"]],
@@ -2313,7 +2643,9 @@ def benchmark_loaded(
             decode_tokps / active_parameter_billions, 6
         ),
         "decode_ms_per_step": round(1000 * decode_s / args.decode_tokens, 6),
-        "decode_active_parameter_tops": round(decode_tokps * active_parameters / 1e12, 6),
+        "decode_active_parameter_tops": round(
+            decode_tokps * active_parameters / 1e12, 6
+        ),
         "step_backend": step_backend,
         "prefill_effective_backend": prefill_backend
         or (
@@ -2321,7 +2653,9 @@ def benchmark_loaded(
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
             in QWEN_STATIC_GRAPH_ROUTES
-            else "module_call" if args.model_kind == "qwen35" else None
+            else "module_call"
+            if args.model_kind == "qwen35"
+            else None
         ),
         "prefill_backend_effective": prefill_backend
         or (
@@ -2329,7 +2663,9 @@ def benchmark_loaded(
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
             in QWEN_STATIC_GRAPH_ROUTES
-            else "module_call" if args.model_kind == "qwen35" else None
+            else "module_call"
+            if args.model_kind == "qwen35"
+            else None
         ),
         "prefill_cache_type": "DynamicCache" if args.model_kind == "qwen35" else None,
         "rwkv_prefill_clampw_scan_effective": prefill_clampw_scan,
@@ -2338,17 +2674,27 @@ def benchmark_loaded(
         "rwkv_prefill_sequence_ffn_effective": prefill_sequence_ffn,
         "rwkv_prefill_global_fp16_accum_effective": prefill_global_fp16_accum,
         "rwkv_prefill_block_fp16_accum_effective": prefill_block_fp16_accum,
-        "effective_backend": qwen_effective_backend(args, qwen_contract) or effective_backend or step_backend,
-        "qwen_fast_path_verified": qwen_bindings["verified"] if qwen_bindings is not None else None,
-        "qwen_fast_path_layer_count": qwen_bindings["layer_count"] if qwen_bindings is not None else None,
-        "qwen_fast_path_bindings": qwen_bindings["bindings"] if qwen_bindings is not None else None,
+        "effective_backend": qwen_effective_backend(args, qwen_contract)
+        or effective_backend
+        or step_backend,
+        "qwen_fast_path_verified": qwen_bindings["verified"]
+        if qwen_bindings is not None
+        else None,
+        "qwen_fast_path_layer_count": qwen_bindings["layer_count"]
+        if qwen_bindings is not None
+        else None,
+        "qwen_fast_path_bindings": qwen_bindings["bindings"]
+        if qwen_bindings is not None
+        else None,
         "cache_type": cache_type,
         "qwen_axis_composition": (
             "independent_best_prefill_and_decode"
             if args.model_kind == "qwen35"
             and str(getattr(args, "qwen_decode_optimization", "module_call_dynamic"))
             in QWEN_STATIC_GRAPH_ROUTES
-            else "continuous_single_cache_path" if args.model_kind == "qwen35" else None
+            else "continuous_single_cache_path"
+            if args.model_kind == "qwen35"
+            else None
         ),
         "qwen_decode_optimization_effective": decode_timing[
             "qwen_decode_optimization_effective"
@@ -2363,9 +2709,7 @@ def benchmark_loaded(
             "qwen_graph_prefill_next_token_match"
         ],
         "qwen_graph_greedy_match": decode_timing["qwen_graph_greedy_match"],
-        "qwen_same_cache_greedy_match": decode_timing[
-            "qwen_same_cache_greedy_match"
-        ],
+        "qwen_same_cache_greedy_match": decode_timing["qwen_same_cache_greedy_match"],
         "qwen_static_cache_eager_greedy_match": decode_timing[
             "qwen_static_cache_eager_greedy_match"
         ],
@@ -2379,18 +2723,14 @@ def benchmark_loaded(
         "qwen_graph_distinct_batch_prompts": decode_timing[
             "qwen_graph_distinct_batch_prompts"
         ],
-        "qwen_graph_logits_min_cosine": decode_timing[
-            "qwen_graph_logits_min_cosine"
-        ],
+        "qwen_graph_logits_min_cosine": decode_timing["qwen_graph_logits_min_cosine"],
         "qwen_graph_logits_max_abs_diff": decode_timing[
             "qwen_graph_logits_max_abs_diff"
         ],
         "qwen_graph_logits_trace_finite": decode_timing[
             "qwen_graph_logits_trace_finite"
         ],
-        "qwen_graph_logits_worst_index": decode_timing[
-            "qwen_graph_logits_worst_index"
-        ],
+        "qwen_graph_logits_worst_index": decode_timing["qwen_graph_logits_worst_index"],
         "qwen_dynamic_static_logits_min_cosine": decode_timing[
             "qwen_dynamic_static_logits_min_cosine"
         ],
@@ -2421,9 +2761,7 @@ def benchmark_loaded(
         "qwen_same_cache_logits_max_abs_diff": decode_timing[
             "qwen_same_cache_logits_max_abs_diff"
         ],
-        "qwen_same_cache_logits_finite": decode_timing[
-            "qwen_same_cache_logits_finite"
-        ],
+        "qwen_same_cache_logits_finite": decode_timing["qwen_same_cache_logits_finite"],
         "qwen_same_cache_logits_worst_index": decode_timing[
             "qwen_same_cache_logits_worst_index"
         ],
@@ -2432,15 +2770,11 @@ def benchmark_loaded(
         "qwen_graph_setup_s": decode_timing["qwen_graph_setup_s"],
         "qwen_graph_max_cache_len": decode_timing["qwen_graph_max_cache_len"],
         "qwen_graph_break_count": decode_timing["qwen_graph_break_count"],
-        "qwen_cudagraph_skip_count": decode_timing[
-            "qwen_cudagraph_skip_count"
-        ],
+        "qwen_cudagraph_skip_count": decode_timing["qwen_cudagraph_skip_count"],
         "qwen_cudagraph_recorded_non_static_inputs": decode_timing[
             "qwen_cudagraph_recorded_non_static_inputs"
         ],
-        "qwen_cuda_graph_launch_count": decode_timing[
-            "qwen_cuda_graph_launch_count"
-        ],
+        "qwen_cuda_graph_launch_count": decode_timing["qwen_cuda_graph_launch_count"],
         "qwen_cache_pointer_stable": decode_timing["qwen_cache_pointer_stable"],
         "qwen_cache_tensor_pointer_count": decode_timing[
             "qwen_cache_tensor_pointer_count"
@@ -2475,7 +2809,9 @@ def benchmark(args: argparse.Namespace) -> dict[str, Any]:
     model = None
     try:
         if args.model_kind == "rwkv":
-            effective_model_path, temporary = prepare_rwkv_model_dir(args.model, args.rwkv_code_source)
+            effective_model_path, temporary = prepare_rwkv_model_dir(
+                args.model, args.rwkv_code_source
+            )
         tokenizer = AutoTokenizer.from_pretrained(
             effective_model_path,
             trust_remote_code=args.model_kind == "rwkv",
@@ -2540,7 +2876,9 @@ def parse_args() -> argparse.Namespace:
         ],
     )
     ap.add_argument("--native-quant-min-params", type=int, default=1_000_000)
-    ap.add_argument("--native-quant-policy", choices=["memory", "speed"], default="memory")
+    ap.add_argument(
+        "--native-quant-policy", choices=["memory", "speed"], default="memory"
+    )
     ap.add_argument("--torchao-group-size", type=int, default=128)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--batch-size", type=int, default=1)
@@ -2554,8 +2892,21 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--warmup", type=int, default=1)
     ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--rwkv-attn-mode", choices=["chunk", "fused_recurrent"], default="fused_recurrent")
+    ap.add_argument(
+        "--rwkv-attn-mode",
+        choices=["chunk", "fused_recurrent"],
+        default="fused_recurrent",
+    )
     ap.add_argument("--rwkv-code-source", choices=["repo", "model"], default="repo")
+    ap.add_argument(
+        "--rwkv-implementation",
+        choices=["auto", "wrapper_repo"],
+        default="auto",
+        help=(
+            "RWKV model class loader. wrapper_repo bypasses converted auto_map and "
+            "loads the repository FLA wrapper directly from the canonical model path."
+        ),
+    )
     ap.add_argument(
         "--qwen-backend",
         choices=["auto", "fla", "torch"],
@@ -2597,6 +2948,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--results", default="")
     ap.add_argument("--probe-output", default="")
     ap.add_argument("--probe-tokens", type=int, default=8)
+    ap.add_argument("--probe-batch-size", type=int, default=1)
     ap.add_argument("--optional", action="store_true")
     args = ap.parse_args()
     validate_args(args)
@@ -2610,12 +2962,18 @@ def main() -> int:
     except Exception as exc:
         row = failure_row(args, exc)
         append_row(args.results, row)
-        print("QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False), flush=True)
+        print(
+            "QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False),
+            flush=True,
+        )
         if not args.optional:
             raise
         return 0
     append_row(args.results, row)
-    print("QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False), flush=True)
+    print(
+        "QWEN35_CROSS_MODEL_SPEED_RESULT " + json.dumps(row, ensure_ascii=False),
+        flush=True,
+    )
     return 0
 
 

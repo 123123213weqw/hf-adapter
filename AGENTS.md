@@ -156,7 +156,13 @@ Current exact-card dispatch additions:
   Stacked RKV must remain disabled for 7.2B because exact-card rows show lower
   latency and roughly 2.4-3.2 GiB lower peak VRAM without it. The global
   accumulation switch must remain exact-shape, scoped, single-GPU by default,
-  and empty for other cards; do not promote it by Blackwell family alone.
+  and empty for other cards; do not promote it by Blackwell family alone. The
+  SM120 compiled dense FFN route is explicit-only through
+  `RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=1` and restricted to FP16/B8,
+  hidden 1024/2048, and exactly 24 layers. It must compile and warm all layer
+  weights before raw CUDA-graph capture and fail without fallback if any
+  selected/effective layer or correctness gate is missing; it is not a 5090
+  default until full-model long-horizon and paired-matrix evidence passes.
 
 ### Quantization
 
