@@ -35,6 +35,9 @@ def test_formal_runner_captures_complete_matrix_and_long_correctness() -> None:
         "--require-distinct-batch-prompts",
         "baseline_fresh_gpu_processes",
         "candidate_formal_lane_processes",
+        '"TORCHDYNAMO_DISABLE=1"',
+        '"TORCH_COMPILE_DISABLE=1"',
+        '"performance_role":False',
     ):
         assert text in SCRIPT
 

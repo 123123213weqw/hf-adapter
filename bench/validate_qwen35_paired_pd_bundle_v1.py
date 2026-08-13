@@ -496,6 +496,19 @@ def _validate_correctness(
             },
         ),
         (
+            "reference_contract",
+            {
+                "rwkv_implementation": "wrapper_repo",
+                "RWKV7_FAST_TOKEN_BACKEND": "fla",
+                "RWKV7_NATIVE_MODEL_BACKEND": "eager",
+                "RWKV7_FAST_PREFILL": "0",
+                "RWKV7_NATIVE_PREFILL_GRAPH": "0",
+                "TORCHDYNAMO_DISABLE": "1",
+                "TORCH_COMPILE_DISABLE": "1",
+                "performance_role": False,
+            },
+        ),
+        (
             "gates",
             {
                 "greedy_tokens": "exact_all_512",
