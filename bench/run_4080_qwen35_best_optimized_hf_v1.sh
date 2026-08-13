@@ -23,8 +23,8 @@ if [[ ! "${REPOSITORY_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "REPOSITORY_COMMIT must be the explicit 40-hex commit under test" >&2
   exit 2
 fi
-if [[ "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_inductor_cudagraph" && "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_raw_cudagraph" ]]; then
-  echo "QWEN_DECODE_OPTIMIZATION must be a supported StaticCache CUDA Graph route" >&2
+if [[ "${QWEN_DECODE_OPTIMIZATION}" != "module_call_dynamic" && "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_inductor_cudagraph" && "${QWEN_DECODE_OPTIMIZATION}" != "static_cache_raw_cudagraph" ]]; then
+  echo "QWEN_DECODE_OPTIMIZATION must be module_call_dynamic or a supported StaticCache CUDA Graph route" >&2
   exit 2
 fi
 if [[ "${QWEN_DECODE_OPTIMIZATION}" == "static_cache_inductor_cudagraph" && "${QWEN_COMPILE_MODE}" != "reduce-overhead" && "${QWEN_COMPILE_MODE}" != "max-autotune" ]]; then

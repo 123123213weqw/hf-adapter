@@ -65,7 +65,7 @@ run_qwen() {
 }
 run_qwen 0p8 "${QWEN_08_MODEL}" rwkv-0.4b__qwen3.5-0.8b 0.8b static_cache_inductor_cudagraph
 run_qwen 2b "${QWEN_2_MODEL}" rwkv-1.5b__qwen3.5-2b 2b static_cache_inductor_cudagraph
-run_qwen 4b "${QWEN_4_MODEL}" rwkv-2.9b__qwen3.5-4b 4b static_cache_raw_cudagraph
+run_qwen 4b "${QWEN_4_MODEL}" rwkv-2.9b__qwen3.5-4b 4b module_call_dynamic
 
 reference="${OUT_DIR}/qwen_reference.jsonl"
 [[ ! -e "${reference}" ]] || { echo "refusing to overwrite ${reference}" >&2; exit 2; }

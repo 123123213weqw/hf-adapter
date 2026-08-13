@@ -20,7 +20,8 @@ def test_top_level_runner_is_append_never_and_owns_one_path_tree() -> None:
 
 def test_top_level_runner_locks_the_three_whole_model_qwen_routes() -> None:
     assert SCRIPT.count("static_cache_inductor_cudagraph") == 2
-    assert SCRIPT.count("static_cache_raw_cudagraph") == 1
+    assert SCRIPT.count("static_cache_raw_cudagraph") == 0
+    assert SCRIPT.count("module_call_dynamic") == 1
     assert "qwen_reference.jsonl" in SCRIPT
 
 

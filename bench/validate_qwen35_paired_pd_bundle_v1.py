@@ -19,6 +19,7 @@ try:
         EXPECTED_DEVICE,
         PAIRS,
         PROTOCOL,
+        QWEN_ROUTES,
         RWKV_SIZES,
         _read_jsonl_bytes,
         render_markdown,
@@ -30,6 +31,7 @@ except ModuleNotFoundError:
         EXPECTED_DEVICE,
         PAIRS,
         PROTOCOL,
+        QWEN_ROUTES,
         RWKV_SIZES,
         _read_jsonl_bytes,
         render_markdown,
@@ -59,8 +61,9 @@ ROW_RUNTIME = {
 EXPECTED_QWEN_ROUTES = {
     PAIRS[0]: ("0.8b", "static_cache_inductor_cudagraph", "max-autotune"),
     PAIRS[1]: ("2b", "static_cache_inductor_cudagraph", "max-autotune"),
-    PAIRS[2]: ("4b", "static_cache_raw_cudagraph", None),
+    PAIRS[2]: ("4b", "module_call_dynamic", None),
 }
+assert {pair: route for pair, (_, route, _) in EXPECTED_QWEN_ROUTES.items()} == QWEN_ROUTES
 HEX_DIGITS = frozenset("0123456789abcdef")
 
 

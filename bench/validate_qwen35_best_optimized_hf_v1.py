@@ -40,6 +40,7 @@ QWEN_GRAPH_ROUTES = {
     "static_cache_inductor_cudagraph",
     "static_cache_raw_cudagraph",
 }
+QWEN_DYNAMIC_ROUTE = "module_call_dynamic"
 
 
 def read_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -125,7 +126,13 @@ def _validate_samples(
         )
 
 
-def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) -> None:
+def _validate_row(
+    row: dict[str, Any],
+    expected_device: str,
+    errors: list[str],
+    *,
+    expected_route: str | None = None,
+) -> None:
     for field, expected in (
         ("axis", "qwen35_cross_model_speed"),
         ("benchmark_matrix", MATRIX),
@@ -151,24 +158,6 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         ("qwen_causal_conv1d_importable", True),
         ("qwen_conv_backend_effective", "causal_conv1d"),
         ("qwen_force_torch", False),
-        ("prefill_backend_effective", "module_call_dynamic_cache"),
-        ("prefill_cache_type", "DynamicCache"),
-        ("cache_type", "StaticCache"),
-        ("qwen_cuda_graph_requested", True),
-        ("qwen_cuda_graph_effective", True),
-        ("qwen_decode_cuda_graph_verified", True),
-        ("qwen_cache_pointer_stable", True),
-        ("qwen_graph_parity_verified", True),
-        ("qwen_graph_prefill_next_token_match", True),
-        ("qwen_axis_composition", "independent_best_prefill_and_decode"),
-        ("qwen_graph_greedy_match", True),
-        ("qwen_same_cache_greedy_match", True),
-        ("qwen_static_cache_eager_greedy_match", True),
-        ("qwen_graph_logits_greedy_match", True),
-        ("qwen_graph_logits_trace_finite", True),
-        ("qwen_dynamic_static_logits_finite", True),
-        ("qwen_same_cache_logits_finite", True),
-        ("qwen_static_compiled_logits_finite", True),
         ("logits_finite", True),
     ):
         _require(row, field, expected, errors)
@@ -179,10 +168,13 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         )
     requested_route = row.get("qwen_decode_optimization_requested")
     effective_route = row.get("qwen_decode_optimization_effective")
-    if requested_route not in QWEN_GRAPH_ROUTES:
+    allowed_routes = (
+        {expected_route} if expected_route is not None else QWEN_GRAPH_ROUTES
+    )
+    if requested_route not in allowed_routes:
         errors.append(
             f"{row.get('_source', '<row>')}: qwen_decode_optimization_requested="
-            f"{requested_route!r}, expected one of {sorted(QWEN_GRAPH_ROUTES)!r}"
+            f"{requested_route!r}, expected one of {sorted(allowed_routes)!r}"
         )
     if requested_route != effective_route:
         errors.append(
@@ -190,6 +182,27 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
             f"{requested_route!r} != {effective_route!r}"
         )
     if effective_route in QWEN_GRAPH_ROUTES:
+        for field, expected in (
+            ("prefill_backend_effective", "module_call_dynamic_cache"),
+            ("prefill_cache_type", "DynamicCache"),
+            ("cache_type", "StaticCache"),
+            ("qwen_cuda_graph_requested", True),
+            ("qwen_cuda_graph_effective", True),
+            ("qwen_decode_cuda_graph_verified", True),
+            ("qwen_cache_pointer_stable", True),
+            ("qwen_graph_parity_verified", True),
+            ("qwen_graph_prefill_next_token_match", True),
+            ("qwen_axis_composition", "independent_best_prefill_and_decode"),
+            ("qwen_graph_greedy_match", True),
+            ("qwen_same_cache_greedy_match", True),
+            ("qwen_static_cache_eager_greedy_match", True),
+            ("qwen_graph_logits_greedy_match", True),
+            ("qwen_graph_logits_trace_finite", True),
+            ("qwen_dynamic_static_logits_finite", True),
+            ("qwen_same_cache_logits_finite", True),
+            ("qwen_static_compiled_logits_finite", True),
+        ):
+            _require(row, field, expected, errors)
         _require(row, "step_backend", f"qwen_{effective_route}", errors)
     if effective_route == "static_cache_inductor_cudagraph":
         _require(row, "qwen_compile_backend_effective", "inductor", errors)
@@ -241,6 +254,57 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
                 f"{row.get('_source', '<row>')}: qwen_cuda_graph_launch_count="
                 f"{launches!r}, expected exactly 1"
             )
+    elif effective_route == QWEN_DYNAMIC_ROUTE:
+        for field, expected in (
+            ("step_backend", "module_call"),
+            ("prefill_backend_effective", "module_call"),
+            ("prefill_cache_type", "DynamicCache"),
+            ("cache_type", "DynamicCache"),
+            ("qwen_axis_composition", "continuous_single_cache_path"),
+            ("qwen_cuda_graph_requested", False),
+            ("qwen_cuda_graph_effective", False),
+            ("qwen_decode_cuda_graph_verified", False),
+        ):
+            _require(row, field, expected, errors)
+        for field in (
+            "qwen_compile_mode_requested",
+            "qwen_compile_backend_effective",
+            "qwen_compile_mode_effective",
+            "qwen_compile_fullgraph_effective",
+            "qwen_compile_dynamic_effective",
+            "qwen_graph_break_count",
+            "qwen_cudagraph_skip_count",
+            "qwen_cudagraph_recorded_non_static_inputs",
+            "qwen_cuda_graph_launch_count",
+            "qwen_cache_pointer_stable",
+            "qwen_cache_tensor_pointer_count",
+            "qwen_graph_parity_verified",
+            "qwen_graph_prefill_next_token_match",
+            "qwen_graph_greedy_match",
+            "qwen_same_cache_greedy_match",
+            "qwen_static_cache_eager_greedy_match",
+            "qwen_graph_logits_greedy_match",
+            "qwen_graph_logits_trace_finite",
+            "qwen_dynamic_static_logits_finite",
+            "qwen_same_cache_logits_finite",
+            "qwen_static_compiled_logits_finite",
+            "qwen_graph_logits_min_cosine",
+            "qwen_graph_logits_max_abs_diff",
+            "qwen_dynamic_static_logits_min_cosine",
+            "qwen_dynamic_static_logits_max_abs_diff",
+            "qwen_same_cache_logits_min_cosine",
+            "qwen_same_cache_logits_max_abs_diff",
+            "qwen_static_compiled_logits_min_cosine",
+            "qwen_static_compiled_logits_max_abs_diff",
+            "qwen_graph_probe_tokens",
+            "qwen_graph_logits_probe_tokens",
+            "qwen_graph_distinct_batch_prompts",
+            "qwen_graph_scope",
+            "qwen_graph_capture_s",
+            "qwen_graph_setup_s",
+            "qwen_graph_max_cache_len",
+        ):
+            _require(row, field, None, errors)
     if expected_device:
         _require(row, "device", expected_device, errors)
 
@@ -255,31 +319,33 @@ def _validate_row(row: dict[str, Any], expected_device: str, errors: list[str]) 
         return
 
     batch, prompt, decode = (int(value) for value in shape)
-    _require(row, "qwen_graph_max_cache_len", prompt + 3 + decode, errors)
-    _require(row, "qwen_graph_probe_tokens", 3 + decode, errors)
-    _require(row, "qwen_graph_logits_probe_tokens", 16, errors)
-    _require(row, "qwen_graph_distinct_batch_prompts", batch > 1, errors)
-    for field in (
-        "qwen_graph_logits_min_cosine",
-        "qwen_dynamic_static_logits_min_cosine",
-    ):
-        minimum_cosine = row.get(field)
-        if not _is_finite_real_number(minimum_cosine):
+    if effective_route in QWEN_GRAPH_ROUTES:
+        _require(row, "qwen_graph_max_cache_len", prompt + 3 + decode, errors)
+        _require(row, "qwen_graph_probe_tokens", 3 + decode, errors)
+        _require(row, "qwen_graph_logits_probe_tokens", 16, errors)
+        _require(row, "qwen_graph_distinct_batch_prompts", batch > 1, errors)
+        for field in (
+            "qwen_graph_logits_min_cosine",
+            "qwen_dynamic_static_logits_min_cosine",
+        ):
+            minimum_cosine = row.get(field)
+            if not _is_finite_real_number(minimum_cosine):
+                errors.append(
+                    f"{row.get('_source', '<row>')}: {field}="
+                    f"{minimum_cosine!r}, expected finite cross-cache telemetry"
+                )
+        same_cache_cosine = row.get("qwen_same_cache_logits_min_cosine")
+        if (
+            not _is_finite_real_number(same_cache_cosine)
+            or same_cache_cosine < 0.9999
+        ):
             errors.append(
-                f"{row.get('_source', '<row>')}: {field}="
-                f"{minimum_cosine!r}, expected finite cross-cache telemetry"
+                f"{row.get('_source', '<row>')}: qwen_same_cache_logits_min_cosine="
+                f"{same_cache_cosine!r}, expected >=0.9999"
             )
-    same_cache_cosine = row.get("qwen_same_cache_logits_min_cosine")
-    if (
-        not _is_finite_real_number(same_cache_cosine)
-        or same_cache_cosine < 0.9999
-    ):
-        errors.append(
-            f"{row.get('_source', '<row>')}: qwen_same_cache_logits_min_cosine="
-            f"{same_cache_cosine!r}, expected >=0.9999"
-        )
+    if effective_route in QWEN_GRAPH_ROUTES:
+        _require_positive(row, "qwen_cache_tensor_pointer_count", errors)
     for field in (
-        "qwen_cache_tensor_pointer_count",
         "prefill_tokps_total",
         "decode_tokps_total",
         "prefill_tokps_total_raw",
@@ -317,6 +383,7 @@ def validate_matrix(
     *,
     expected_device: str = "",
     expected_pairs: Iterable[str] | None = None,
+    expected_routes_by_pair: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     selected_pairs = (
@@ -332,8 +399,23 @@ def validate_matrix(
     expected_rows = len(selected_pairs) * len(EXPECTED_SHAPES)
     if len(rows) != expected_rows:
         errors.append(f"reference row count={len(rows)}, expected {expected_rows}")
+    if expected_routes_by_pair is not None and set(expected_routes_by_pair) != set(
+        selected_pairs
+    ):
+        errors.append("expected route map must exactly cover the selected model pairs")
     for row in rows:
-        _validate_row(row, expected_device, errors)
+        pair = str(row.get("model_pair", ""))
+        expected_route = (
+            expected_routes_by_pair.get(pair)
+            if expected_routes_by_pair is not None
+            else None
+        )
+        _validate_row(
+            row,
+            expected_device,
+            errors,
+            expected_route=expected_route,
+        )
     repository_commits = sorted(
         {
             str(row.get("benchmark_repository_commit"))

@@ -51,8 +51,9 @@ def test_4080_qwen_reference_runner_locks_runtime_and_provenance() -> None:
     assert "HF_HUB_OFFLINE=1" in text
 
 
-def test_4080_qwen_reference_runner_supports_both_graph_routes() -> None:
+def test_4080_qwen_reference_runner_supports_graph_and_dynamic_routes() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
+    assert "module_call_dynamic" in text
     assert "static_cache_inductor_cudagraph" in text
     assert "static_cache_raw_cudagraph" in text
     assert '--qwen-decode-optimization "${QWEN_DECODE_OPTIMIZATION}"' in text

@@ -38,6 +38,54 @@ def references() -> list[dict]:
                 **RUNTIME,
             }
         )
+        if pair == PAIRS[2]:
+            item.update(
+                {
+                    "qwen_decode_optimization_requested": "module_call_dynamic",
+                    "qwen_decode_optimization_effective": "module_call_dynamic",
+                    "step_backend": "module_call",
+                    "prefill_backend_effective": "module_call",
+                    "prefill_cache_type": "DynamicCache",
+                    "cache_type": "DynamicCache",
+                    "qwen_axis_composition": "continuous_single_cache_path",
+                    "qwen_cuda_graph_requested": False,
+                    "qwen_cuda_graph_effective": False,
+                    "qwen_decode_cuda_graph_verified": False,
+                }
+            )
+            for field in (
+                "qwen_compile_mode_requested",
+                "qwen_compile_backend_effective",
+                "qwen_compile_mode_effective",
+                "qwen_compile_fullgraph_effective",
+                "qwen_compile_dynamic_effective",
+                "qwen_graph_break_count",
+                "qwen_cudagraph_skip_count",
+                "qwen_cudagraph_recorded_non_static_inputs",
+                "qwen_cuda_graph_launch_count",
+                "qwen_cache_pointer_stable",
+                "qwen_cache_tensor_pointer_count",
+                "qwen_graph_parity_verified",
+                "qwen_graph_prefill_next_token_match",
+                "qwen_graph_greedy_match",
+                "qwen_same_cache_greedy_match",
+                "qwen_static_cache_eager_greedy_match",
+                "qwen_graph_logits_greedy_match",
+                "qwen_graph_logits_trace_finite",
+                "qwen_dynamic_static_logits_finite",
+                "qwen_same_cache_logits_finite",
+                "qwen_static_compiled_logits_finite",
+                "qwen_graph_logits_min_cosine",
+                "qwen_dynamic_static_logits_min_cosine",
+                "qwen_same_cache_logits_min_cosine",
+                "qwen_static_compiled_logits_min_cosine",
+                "qwen_graph_max_cache_len",
+                "qwen_graph_probe_tokens",
+                "qwen_graph_logits_probe_tokens",
+                "qwen_graph_distinct_batch_prompts",
+                "qwen_graph_scope",
+            ):
+                item[field] = None
         rows.append(item)
     return rows
 
@@ -186,6 +234,16 @@ def test_runtime_route_sample_and_coverage_drift_fail() -> None:
 
 def test_reference_contract_still_uses_known_qwen_pairs() -> None:
     assert tuple(QWEN_PAIRS)[:3] == PAIRS
+
+
+def test_4b_reference_route_is_locked_to_continuous_dynamic_cache() -> None:
+    reference = references()
+    row = next(item for item in reference if item["model_pair"] == PAIRS[2])
+    row["qwen_decode_optimization_requested"] = "static_cache_raw_cudagraph"
+    row["qwen_decode_optimization_effective"] = "static_cache_raw_cudagraph"
+    summary = validate_paired_pd(candidates(), reference)
+    assert summary["status"] == "fail"
+    assert any("expected one of ['module_call_dynamic']" in error for error in summary["errors"])
 
 
 def test_cross_model_row_exports_exact_base_bmm_layer_sets() -> None:

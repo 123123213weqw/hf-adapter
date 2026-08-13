@@ -47,6 +47,11 @@ RWKV_SIZES = {
     "rwkv-1.5b__qwen3.5-2b": ("1.5b", 24),
     "rwkv-2.9b__qwen3.5-4b": ("2.9b", 32),
 }
+QWEN_ROUTES = {
+    PAIRS[0]: "static_cache_inductor_cudagraph",
+    PAIRS[1]: "static_cache_inductor_cudagraph",
+    PAIRS[2]: "module_call_dynamic",
+}
 EXPECTED_KEYS = {
     (pair, batch, prompt, decode)
     for pair in PAIRS
@@ -314,6 +319,7 @@ def validate_paired_pd(
             reference_rows,
             expected_device=expected_device,
             expected_pairs=PAIRS,
+            expected_routes_by_pair=QWEN_ROUTES,
         )
     except (TypeError, ValueError) as exc:
         qwen_validation = {"status": "fail", "errors": [str(exc)]}

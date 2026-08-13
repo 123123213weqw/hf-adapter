@@ -298,7 +298,7 @@ def _bundle(tmp_path: Path) -> dict[str, object]:
     qwen_contracts = {
         PAIRS[0]: ("0.8b", "static_cache_inductor_cudagraph", "max-autotune"),
         PAIRS[1]: ("2b", "static_cache_inductor_cudagraph", "max-autotune"),
-        PAIRS[2]: ("4b", "static_cache_raw_cudagraph", None),
+        PAIRS[2]: ("4b", "module_call_dynamic", None),
     }
     for index, pair in enumerate(PAIRS):
         size, decode_route, compile_mode = qwen_contracts[pair]
