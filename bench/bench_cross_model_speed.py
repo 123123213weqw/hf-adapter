@@ -2545,6 +2545,7 @@ _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS = (
     "ada_wagv_lora_extension_effective_layer_count",
     "ada_wagv_lora_extension_full_model_effective",
     "rkv_policy",
+    "fused_norm_mix_num_warps",
     "state_dtype",
     "triton_fp16_state",
     "fp16_recurrent",

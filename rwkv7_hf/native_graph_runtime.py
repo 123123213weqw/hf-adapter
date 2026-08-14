@@ -26,6 +26,7 @@ try:
         _block_ip,
         _block_ip_batched,
         _native_graph_ada_wagv_bmm_requested,
+        _native_graph_fused_norm_mix_num_warps,
         _native_graph_rkv_policy,
         _native_graph_sm120_compiled_ffn_requested,
         _native_graph_sm120_wagv_bmm_g_requested,
@@ -38,6 +39,7 @@ except Exception:  # pragma: no cover - optional CUDA/Triton acceleration
     _block_ip = None
     _block_ip_batched = None
     _native_graph_ada_wagv_bmm_requested = None
+    _native_graph_fused_norm_mix_num_warps = None
     _native_graph_rkv_policy = None
     _native_graph_sm120_compiled_ffn_requested = None
     _native_graph_sm120_wagv_bmm_g_requested = None
@@ -227,6 +229,11 @@ class NativeGraphRunner:
             str(_native_graph_rkv_policy())
             if _native_graph_rkv_policy is not None
             else "unavailable"
+        )
+        self.fused_norm_mix_num_warps = (
+            int(_native_graph_fused_norm_mix_num_warps())
+            if _native_graph_fused_norm_mix_num_warps is not None
+            else None
         )
         if self.ada_wagv_lora_extension_required:
             if self.batch_size != 1:
@@ -487,7 +494,6 @@ class NativeGraphRunner:
                     self.sparse_ffn_out[layer_index],
                     self.elapsed,
                     layer_index + 1 == self.num_layers,
-                    self._record_decode_route,
                 )
             hidden = F.layer_norm(
                 hidden, [self.hidden], self.norm_weight, self.norm_bias, 1e-5
@@ -728,6 +734,7 @@ class NativeGraphRunner:
             "ada_wagv_lora_extension_effective_layer_count": len(extension_layers),
             "ada_wagv_lora_extension_full_model_effective": extension_effective,
             "rkv_policy": str(getattr(self, "rkv_policy", "unavailable")),
+            "fused_norm_mix_num_warps": getattr(self, "fused_norm_mix_num_warps", None),
             "state_dtype": str(getattr(self, "state_dtype", "unavailable")),
             "triton_fp16_state": bool(getattr(self, "triton_fp16_state", False)),
             "fp16_recurrent": bool(getattr(self, "fp16_recurrent", False)),
