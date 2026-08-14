@@ -228,6 +228,18 @@ def _validate_candidate_row(
     )
     _require(row, "rwkv_native_graph_triton_fp16_state", fp16_state, errors)
     _require(row, "rwkv_native_graph_fp16_recurrent", False, errors)
+    _require(
+        row,
+        "rwkv_native_graph_sm70_wagv_lora_extension_required",
+        batch == 1,
+        errors,
+    )
+    _require(
+        row,
+        "rwkv_native_graph_sm70_wagv_lora_extension_available",
+        batch == 1,
+        errors,
+    )
 
     eligible_layers = list(range(1, layer_count))
     for route, enabled in (
@@ -1086,6 +1098,7 @@ def validate_provenance(
         "RWKV7_NATIVE_MODEL_BACKEND": "native_graph",
         "RWKV7_NATIVE_PREFILL_GRAPH": "unset_exact_card_policy",
         "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION": "0",
+        "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION": "per_lane_exact_v100_policy",
         "RWKV7_NATIVE_GRAPH_RKV_POLICY": "per_lane_exact_v100_policy",
         "RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS": "per_lane_exact_v100_policy",
         "RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA": "per_lane_exact_v100_policy",
@@ -1130,6 +1143,7 @@ def validate_provenance(
             ("rows", 6),
             ("probe_cell", [batch, 2048, 512]),
             ("ada_wagv_lora_require_extension", False),
+            ("sm70_wagv_lora_require_extension", batch == 1),
             ("rkv_policy", "vkwr_auto" if closure_lane else "manual"),
             ("fused_norm_mix_num_warps", 8 if closure_lane else 4),
             ("fused_wavg_lora", not closure_lane),

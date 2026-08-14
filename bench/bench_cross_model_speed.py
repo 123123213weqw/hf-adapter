@@ -2555,6 +2555,8 @@ _RWKV_NATIVE_GRAPH_DECODE_ROUTE_FIELDS = (
     "sm70_wagv_lora_effective_layers",
     "sm70_wagv_lora_effective_layer_count",
     "sm70_wagv_lora_full_eligible_layers_effective",
+    "sm70_wagv_lora_extension_required",
+    "sm70_wagv_lora_extension_available",
     "fused_wavg_lora_selected",
     "fused_wavg_lora_effective",
     "fused_wavg_lora_selected_layers",

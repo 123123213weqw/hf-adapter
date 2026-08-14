@@ -18,6 +18,12 @@ except Exception:  # pragma: no cover - optional CUDA extension
     ada_wagv_lora_available = None
     ada_wagv_lora_build_error = None
 
+try:
+    from .sm70_wagv import sm70_wagv_lora_available, sm70_wagv_lora_build_error
+except Exception:  # pragma: no cover - optional CUDA extension
+    sm70_wagv_lora_available = None
+    sm70_wagv_lora_build_error = None
+
 if TYPE_CHECKING:
     from .native_model import NativeRWKV7Cache, NativeRWKV7ForCausalLM
 
@@ -225,6 +231,10 @@ class NativeGraphRunner:
             "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION", False
         )
         self.ada_wagv_lora_extension_available = False
+        self.sm70_wagv_lora_extension_required = env_flag(
+            "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION", False
+        )
+        self.sm70_wagv_lora_extension_available = False
         self.rkv_policy = (
             str(_native_graph_rkv_policy())
             if _native_graph_rkv_policy is not None
@@ -256,6 +266,27 @@ class NativeGraphRunner:
                     f"graph capture, but it could not be built; fallback is forbidden: {detail}"
                 )
             self.ada_wagv_lora_extension_available = True
+        if self.sm70_wagv_lora_extension_required:
+            if self.batch_size != 1:
+                raise RuntimeError(
+                    "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION=1 "
+                    "is restricted to the exact B1 route"
+                )
+            available = bool(
+                sm70_wagv_lora_available is not None
+                and sm70_wagv_lora_available(self.device, build=True)
+            )
+            if not available:
+                detail = (
+                    sm70_wagv_lora_build_error()
+                    if sm70_wagv_lora_build_error is not None
+                    else "extension module unavailable"
+                )
+                raise RuntimeError(
+                    "the SM70 W/A/G/V extension was required before native CUDA "
+                    f"graph capture, but it could not be built; fallback is forbidden: {detail}"
+                )
+            self.sm70_wagv_lora_extension_available = True
         self.hidden = int(owner.config.hidden_size)
         self.attention_hidden = int(
             getattr(owner.config, "attention_hidden_size", packs[0][1] * packs[0][2])
@@ -480,6 +511,23 @@ class NativeGraphRunner:
                     f"effective={sorted(effective)}; fallback is forbidden"
                 )
 
+    def _require_requested_sm70_route(self) -> None:
+        """Reject a missing explicitly required SM70 route before capture."""
+
+        if not getattr(self, "sm70_wagv_lora_extension_required", False):
+            return
+        expected = set(range(1, self.num_layers))
+        selected = self._decode_route_layers["sm70_wagv_lora_selected"]
+        effective = self._decode_route_layers["sm70_wagv_lora_effective"]
+        if selected != expected or effective != expected:
+            raise RuntimeError(
+                "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION=1 was "
+                "requested, but the route was not selected and effective for "
+                "every eligible layer; "
+                f"expected={sorted(expected)}, selected={sorted(selected)}, "
+                f"effective={sorted(effective)}; fallback is forbidden"
+            )
+
     def _one_step(self) -> None:
         if self.single:
             hidden = F.embedding(self.token_ids, self.embeddings).reshape(self.hidden)
@@ -494,6 +542,7 @@ class NativeGraphRunner:
                     self.sparse_ffn_out[layer_index],
                     self.elapsed,
                     layer_index + 1 == self.num_layers,
+                    route_observer=self._record_decode_route,
                 )
             hidden = F.layer_norm(
                 hidden, [self.hidden], self.norm_weight, self.norm_bias, 1e-5
@@ -540,6 +589,7 @@ class NativeGraphRunner:
             for _ in range(3):
                 self._one_step()
         torch.cuda.current_stream(self.device).wait_stream(warmup_stream)
+        self._require_requested_sm70_route()
         self._require_requested_sm120_routes()
         self.graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(self.graph):
@@ -721,6 +771,12 @@ class NativeGraphRunner:
         )
         extension_layers = list(range(self.num_layers)) if extension_required else []
         extension_effective = bool(extension_required and extension_available)
+        sm70_extension_required = bool(
+            getattr(self, "sm70_wagv_lora_extension_required", False)
+        )
+        sm70_extension_available = bool(
+            getattr(self, "sm70_wagv_lora_extension_available", False)
+        )
         return {
             "copy_from_cache_calls": int(self.copy_from_cache_calls),
             "copy_from_cache_fast_skips": int(self.copy_from_cache_fast_skips),
@@ -733,6 +789,8 @@ class NativeGraphRunner:
             "ada_wagv_lora_extension_effective_layers": extension_layers,
             "ada_wagv_lora_extension_effective_layer_count": len(extension_layers),
             "ada_wagv_lora_extension_full_model_effective": extension_effective,
+            "sm70_wagv_lora_extension_required": sm70_extension_required,
+            "sm70_wagv_lora_extension_available": sm70_extension_available,
             "rkv_policy": str(getattr(self, "rkv_policy", "unavailable")),
             "fused_norm_mix_num_warps": getattr(self, "fused_norm_mix_num_warps", None),
             "state_dtype": str(getattr(self, "state_dtype", "unavailable")),

@@ -449,6 +449,8 @@ def test_native_graph_copy_stats_report_captured_bmm_route() -> None:
     runner.state_dtype = torch.float16
     runner.triton_fp16_state = True
     runner.fp16_recurrent = False
+    runner.sm70_wagv_lora_extension_required = True
+    runner.sm70_wagv_lora_extension_available = True
     runner.sm120_compiled_ffn_preparation = CompiledFFNPreparation(
         hidden_size=1024,
         batch_size=8,
@@ -498,6 +500,8 @@ def test_native_graph_copy_stats_report_captured_bmm_route() -> None:
     assert stats["sm70_wagv_lora_selected_layers"] == [1]
     assert stats["sm70_wagv_lora_effective_layers"] == [1]
     assert stats["sm70_wagv_lora_full_eligible_layers_effective"] is True
+    assert stats["sm70_wagv_lora_extension_required"] is True
+    assert stats["sm70_wagv_lora_extension_available"] is True
     assert stats["fused_wavg_lora_full_eligible_layers_effective"] is False
 
 
@@ -717,7 +721,7 @@ def test_native_graph_capture_gate_precedes_constructor_and_capture(
     assert runner.graph is not None
 
 
-def test_native_graph_single_step_preserves_block_ip_signature(monkeypatch) -> None:
+def test_native_graph_single_step_forwards_route_observer(monkeypatch) -> None:
     runner = object.__new__(NativeGraphRunner)
     runner.single = True
     runner.hidden = 4
@@ -735,19 +739,44 @@ def test_native_graph_single_step_preserves_block_ip_signature(monkeypatch) -> N
     runner.norm_bias = torch.zeros(4)
     runner.head = torch.nn.Linear(4, 3, bias=False)
     runner.logits = torch.empty(3)
-    observed: list[tuple[object, ...]] = []
+    observed: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    runner._decode_route_layers = {
+        "sm70_wagv_lora_selected": set(),
+        "sm70_wagv_lora_effective": set(),
+    }
 
-    def fake_block(*args):
-        observed.append(args)
+    def fake_block(*args, **kwargs):
+        observed.append((args, kwargs))
+        observer = kwargs["route_observer"]
+        observer("sm70_wagv_lora_selected", 0)
+        observer("sm70_wagv_lora_effective", 0)
         return args[0]
 
     monkeypatch.setattr(native_graph_runtime_module, "_block_ip", fake_block)
     runner._one_step()
 
     assert len(observed) == 1
-    # hidden/state/xpa/xpf/v_first/pack/sparse/elapsed/advance: no observer.
-    assert len(observed[0]) == 9
-    assert observed[0][-1] is True
+    args, kwargs = observed[0]
+    assert len(args) == 9
+    assert args[-1] is True
+    assert kwargs["route_observer"].__self__ is runner
+    assert runner._decode_route_layers["sm70_wagv_lora_selected"] == {0}
+    assert runner._decode_route_layers["sm70_wagv_lora_effective"] == {0}
+
+
+def test_native_graph_requested_sm70_route_is_fail_closed() -> None:
+    runner = object.__new__(NativeGraphRunner)
+    runner.num_layers = 3
+    runner.sm70_wagv_lora_extension_required = True
+    runner._decode_route_layers = {
+        "sm70_wagv_lora_selected": {1, 2},
+        "sm70_wagv_lora_effective": {1},
+    }
+    with pytest.raises(RuntimeError, match="fallback is forbidden"):
+        runner._require_requested_sm70_route()
+
+    runner._decode_route_layers["sm70_wagv_lora_effective"].add(2)
+    runner._require_requested_sm70_route()
 
 
 if __name__ == "__main__":

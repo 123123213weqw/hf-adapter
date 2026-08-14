@@ -131,6 +131,8 @@ def v100_candidate(batch: int, pair: str = PAIRS[0]) -> dict:
             ),
             "rwkv_native_graph_triton_fp16_state": fp16_state,
             "rwkv_native_graph_fp16_recurrent": False,
+            "rwkv_native_graph_sm70_wagv_lora_extension_required": batch == 1,
+            "rwkv_native_graph_sm70_wagv_lora_extension_available": batch == 1,
             "rwkv_native_graph_sm70_wagv_lora_selected": batch == 1,
             "rwkv_native_graph_sm70_wagv_lora_effective": batch == 1,
             "rwkv_native_graph_sm70_wagv_lora_selected_layers": (

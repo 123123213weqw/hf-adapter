@@ -30,7 +30,15 @@ def test_v100_rwkv_runner_covers_four_pairs_and_exact_routes() -> None:
     assert '"models":4' in script
     assert '"entries":8' in script
     assert "RWKV7_NATIVE_GRAPH_RKV_POLICY=${rkv_policy}" in script
-    assert "local require_extension=0 rkv_policy=manual" in script
+    assert (
+        "local ada_require_extension=0 sm70_require_extension=0 rkv_policy=manual"
+        in script
+    )
+    assert "sm70_require_extension=1" in script
+    assert (
+        "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION=${sm70_require_extension}"
+        in script
+    )
     assert '"${tag}" == "7p2" && "${batch}" == "8"' in script
     assert "rkv_policy=vkwr_auto" in script
     assert "norm_mix_warps=8" in script
@@ -52,6 +60,9 @@ def test_v100_top_level_is_append_never_and_includes_9b() -> None:
     assert "qwen3.5-9b 9b static_cache_raw_cudagraph math_only" in script
     assert script.count("static_cache_raw_cudagraph auto") == 3
     assert "validate_qwen35_v100_paired_pd_v1.py" in script
+    assert "FROZEN_QWEN_DIR" in script
+    assert "FROZEN_QWEN_REFERENCE_SHA256" in script
+    assert "frozen Qwen reference SHA mismatch" in script
 
 
 def test_exact_gpu_helper_supports_literal_product_names() -> None:

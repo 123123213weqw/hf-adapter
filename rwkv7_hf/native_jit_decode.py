@@ -31,6 +31,17 @@ def _ada_wagv_lora_extension_required() -> bool:
     )
 
 
+def _sm70_wagv_lora_extension_required() -> bool:
+    return (
+        os.environ.get(
+            "RWKV7_NATIVE_GRAPH_SM70_WAGV_LORA_REQUIRE_EXTENSION", "0"
+        )
+        .strip()
+        .lower()
+        in _TRUE_VALUES
+    )
+
+
 def bind_runtime(runtime: dict[str, object]) -> None:
     for name in _RUNTIME_NAMES:
         if name in runtime and name not in _OWNED_NAMES:
@@ -241,6 +252,7 @@ def _block_ip(
             xw.view(1, D), xa.view(1, D), xg.view(1, D), xv.view(1, D),
             w1, a1, g1, v1, w2, a2, g2, v2, w0, a0, v0,
             v.view(1, A), v_first.view(1, A),
+            require_extension=_sm70_wagv_lora_extension_required(),
         )
         if route_observer is not None:
             route_observer("sm70_wagv_lora_effective", int(i))
@@ -670,6 +682,7 @@ def _block_ip_batched(
             route_observer("sm70_wagv_lora_selected", int(i))
         w, a, g, v = sm70_wagv_lora(
             xw, xa, xg, xv, w1, a1, g1, v1, w2, a2, g2, v2, w0, a0, v0, v, v_first,
+            require_extension=_sm70_wagv_lora_extension_required(),
         )
         if route_observer is not None:
             route_observer("sm70_wagv_lora_effective", int(i))
