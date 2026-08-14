@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import runpy
+from pathlib import Path
+
 from bench.validate_qwen35_best_optimized_hf_v1 import validate_matrix
 from bench.validate_qwen35_v100_paired_pd_v1 import (
     PAIRS,
@@ -11,8 +14,12 @@ from bench.validate_qwen35_v100_paired_pd_v1 import (
     validate_correctness_manifest,
     validate_provenance,
 )
-from tests.test_qwen35_best_optimized_hf_v1 import complete_rows, use_raw_graph
-from tests.test_qwen35_paired_pd_v1 import candidate_row
+
+HELPERS = runpy.run_path(
+    str(Path(__file__).with_name("test_qwen35_best_optimized_hf_v1.py"))
+)
+complete_rows = HELPERS["complete_rows"]
+use_raw_graph = HELPERS["use_raw_graph"]
 
 
 def v100_qwen_rows() -> list[dict]:
@@ -37,18 +44,60 @@ def v100_qwen_rows() -> list[dict]:
 
 
 def v100_candidate(batch: int) -> dict:
-    item = candidate_row(PAIRS[0], batch, 128, 128)
+    item = {
+        "axis": "qwen35_cross_model_speed",
+        "benchmark_matrix": "qwen35_v100_paired_pd_v1",
+        "benchmark_repository_commit": "1" * 40,
+        "optimization_lane": "best_optimized_hf",
+        "model_pair": PAIRS[0],
+        "model_size_label": "0.4b",
+        "model_role": "candidate",
+        "model_kind": "rwkv",
+        "rwkv_implementation_requested": "auto",
+        "rwkv_implementation_effective": "native_model",
+        "dtype": "fp16",
+        "quantization": "none",
+        "quantization_backend": "dense",
+        "native_quant_kernel_active": False,
+        "batch_size": batch,
+        "prompt_tokens": 128,
+        "decode_tokens": 128,
+        "prefill_chunk_size": 512,
+        "warmup": 3,
+        "runs": 7,
+        "timing_statistic": "median",
+        "mtp_enabled": False,
+        "speculative_decoding_enabled": False,
+        "resident_sweep": True,
+        "status": "pass",
+        "logits_finite": True,
+        "device": "Tesla V100-PCIE-32GB",
+        "gpu_arch": "sm_70",
+        "gpu_compute_capability": [7, 0],
+        "rwkv_fast_token_backend_requested": "native_graph",
+        "rwkv_native_model_backend_requested": "native_graph",
+        "effective_backend": "native_graph",
+        "step_backend": "rwkv_fast_token",
+        "cache_type": "NativeRWKV7Cache",
+        "active_parameter_count": 450_767_872,
+        "prefill_sec_samples": [0.05] * 7,
+        "prefill_sec_median": 0.05,
+        "prefill_sec_median_raw": 0.05,
+        "prefill_tokps_total_raw": batch * 128 / 0.05,
+        "decode_sec_samples": [0.1] * 7,
+        "decode_sec_median": 0.1,
+        "decode_sec_median_raw": 0.1,
+        "decode_tokps_total_raw": batch * 128 / 0.1,
+        "torch_version": "2.5.1+cu124",
+        "torch_cuda_version": "12.4",
+        "triton_version": "3.4.0",
+        "transformers_version": "5.12.1",
+        "fla_version": "0.5.1",
+        "causal_conv1d_version": None,
+    }
     layer_indices = list(range(1, 24))
     item.update(
         {
-            "benchmark_matrix": "qwen35_v100_paired_pd_v1",
-            "device": "Tesla V100-PCIE-32GB",
-            "gpu_arch": "sm_70",
-            "gpu_compute_capability": [7, 0],
-            "torch_version": "2.5.1+cu124",
-            "torch_cuda_version": "12.4",
-            "triton_version": "3.4.0",
-            "causal_conv1d_version": None,
             "rwkv_native_graph_rkv_policy": "manual",
             "rwkv_native_graph_state_dtype": (
                 "torch.float16" if batch == 8 else "torch.float32"
@@ -91,6 +140,18 @@ def v100_candidate(batch: int) -> dict:
             "rwkv_native_graph_ada_wagv_bmm_full_model_effective": False,
         }
     )
+    for route in ("sm120_wagv_bmm_g", "sm120_compiled_ffn"):
+        item.update(
+            {
+                f"rwkv_native_graph_{route}_requested": False,
+                f"rwkv_native_graph_{route}_selected": False,
+                f"rwkv_native_graph_{route}_effective": False,
+                f"rwkv_native_graph_{route}_selected_layers": [],
+                f"rwkv_native_graph_{route}_effective_layers": [],
+                f"rwkv_native_graph_{route}_effective_layer_count": 0,
+                f"rwkv_native_graph_{route}_full_model_effective": False,
+            }
+        )
     return item
 
 
