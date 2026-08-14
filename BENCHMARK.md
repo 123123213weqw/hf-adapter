@@ -38,12 +38,14 @@ Status vocabulary:
 
 ## Unified Qwen comparator status
 
-RTX 4090 completed the superseding `hf_fast_path_v1` shape matrix on
-2026-08-12. The promoted artifact has 48/48 official FLA + Dao-AILab
-causal-conv1d Qwen rows and 48/48 exact-card best-optimized RWKV rows. All 96
-rows share one locked runtime signature; the fail-closed validator reports no
-errors or fallback. Qwen is the strong official HF fast-operator baseline;
-RWKV is intentionally run at its best verified HF state, including CUDA Graph.
+RTX 4090 completed the superseding `qwen35_4090_paired_pd_v2` matrix on
+2026-08-15. It joins a SHA-locked 48-row Qwen reference, selected from the
+fastest correctness-passing StaticCache Graph route per model, to 48 fresh
+exact-card RWKV rows in the same locked runtime. Raw and parameter-adjusted
+Prefill and Decode all pass 48/48; eight 512-token FLA/native correctness
+comparisons also pass. Qwen and RWKV use different clean repository commits
+and were captured sequentially, so this is a frozen-reference paired result,
+not an interleaved A/B or continuous-E2E measurement.
 
 RTX 5090 first completed a 48/48 Qwen-only best-optimized HF reference on
 2026-08-13, then separately captured 48/48 RWKV rows with the same six-package
@@ -71,23 +73,24 @@ also pass; this remains a speed result, not a quality or continuous-E2E claim.
 
 | GPU | Protocol | Rows | Adjusted Prefill > Qwen | Raw Decode > Qwen | Adjusted Decode > Qwen | Result |
 |---|---|---:|---:|---:|---:|---|
-| RTX 4090 | `hf_fast_path_v1` + `best_optimized_hf` | 96/96 | 48/48 | 48/48 | 48/48 | **PASS** |
+| RTX 4090 | `qwen35_4090_paired_pd_v2` + frozen optimized Qwen reference | 48 Qwen + 48 RWKV; 48 joined | 48/48 | 48/48 | 48/48 | **PASS — STRICT P+D** |
 | RTX 3090 | `hf_fast_path_v1` | pending | — | — | — | **PENDING** |
 | RTX 4080 | `qwen35_paired_pd_v1` | 36 Qwen + 36 RWKV; 36 joined | 36/36 | 36/36 | 36/36 | **PASS — STRICT P+D** |
 | Tesla V100 | `qwen35_v100_paired_pd_v1` + frozen Qwen reference | 48 Qwen + 48 RWKV; 48 joined | 48/48 | 48/48 | 48/48 | **PASS — STRICT P+D** |
 | RTX 5090 | `qwen35_paired_decode_v1` + frozen Qwen reference | 48 Qwen + 48 RWKV; 48 joined | not gated | 48/48 telemetry | 48/48 | **PASS — ADJUSTED DECODE ONLY** |
 
-Across the promoted 4090 matrix, raw Prefill minimum/median is
-`1.361373x/2.315043x` and parameter-adjusted Prefill is
-`1.060506x/1.549011x`. Raw Decode minimum/median is
-`2.275368x/5.871032x` and parameter-adjusted Decode is
-`1.829468x/4.468521x`. Every matched Prefill and Decode cell clears Qwen.
-Corrected Qwen Decode medians for 0.8B/2B/4B/9B are respectively
-`35.512/35.115/25.443/25.499 tok/s` at B1 and
-`268.928/268.261/195.923/197.472 tok/s` at B8. Evidence:
-[`bench/4090_hf_best_optimized_v1_20260812/`](bench/4090_hf_best_optimized_v1_20260812/README.md).
-The earlier [`native_jit` no-Graph artifact](bench/4090_hf_fast_path_v1_20260812/README.md)
-is retained as a diagnostic lane, not the max-performance headline.
+Across the superseding RTX 4090 paired table, raw Prefill
+minimum/median/maximum is `1.415206x/2.449410x/12.686421x`, and
+parameter-adjusted Prefill is `1.148668x/1.695334x/7.600590x`. Raw Decode is
+`1.276285x/1.770640x/3.116990x`; parameter-adjusted Decode is
+`1.026173x/1.323737x/1.867427x`. Every unrounded ratio is strictly above
+`1.0x`. The narrowest cell is 7.2B/9B B8/P128/D128: RWKV reaches `448.713`
+Decode tok/s against Qwen's `351.578`, leaving a `+2.6173%` adjusted margin.
+All eight 512-step FLA/native comparisons preserve greedy tokens and finite
+logits; global prompt/final cosine is at least `0.999992967`. Evidence:
+[`bench/4090_qwen35_paired_pd_v2_20260815/`](bench/4090_qwen35_paired_pd_v2_20260815/README.md).
+The 2026-08-12 artifacts remain historical diagnostics against an older,
+weaker Qwen reference.
 
 Across the RTX 5090 paired Decode subtable, parameter-adjusted Decode has
 minimum/median/maximum `1.029966x/1.409279x/2.063849x`; all 48 unrounded values

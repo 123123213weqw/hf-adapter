@@ -38,6 +38,7 @@ Canonical cross-platform summary: [`../BENCHMARK.md`](../BENCHMARK.md) and
 
 | Platform | Artifact | Current conclusion |
 |---|---|---|
+| RTX 4090 | [`4090_qwen35_paired_pd_v2_20260815/`](4090_qwen35_paired_pd_v2_20260815/README.md) | Frozen optimized-Qwen reference plus fresh RWKV: raw and parameter-adjusted Prefill/Decode pass all 48 cells; adjusted minima `1.148668x/1.026173x`; 8/8 long-horizon correctness checks pass. Speed only, not quality/E2E |
 | RTX 4080 | [`4080_qwen35_paired_pd_v1_20260814/`](4080_qwen35_paired_pd_v1_20260814/README.md) | Same-runtime raw and parameter-adjusted Prefill/Decode pass all 36 cells; adjusted minima `1.051333x/1.022115x`; 6/6 512-token native-graph/FLA probes pass. Speed only, not quality/E2E |
 | Tesla V100 | [`v100_qwen35_paired_pd_v1_20260814/`](v100_qwen35_paired_pd_v1_20260814/README.md) | Frozen-reference raw and parameter-adjusted Prefill/Decode pass all 48 cells; adjusted minima `1.808536x/1.120373x`; 8/8 FLA/native probes plus 7.2B/B8 graph closure pass. Speed only, not quality/E2E |
 | RTX 5090 | [`5090_qwen35_paired_decode_v1_20260813/`](5090_qwen35_paired_decode_v1_20260813/README.md) | Frozen-reference parameter-adjusted Decode passes 48/48 at minimum `1.029966x`; raw Decode 48/48 is supporting telemetry. Decode-only, not quality/Prefill/E2E |

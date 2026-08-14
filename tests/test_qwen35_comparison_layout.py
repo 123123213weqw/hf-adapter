@@ -100,16 +100,22 @@ def test_4090_artifact_table_is_model_batch_sorted_and_formatted() -> None:
 
 
 def test_comparison_docs_link_full_precision_4090_pd_evidence() -> None:
-    artifact_root = "../bench/4090_hf_best_optimized_v1_20260812/"
+    artifact_root = "../bench/4090_qwen35_paired_pd_v2_20260815/"
     for relative in (
         "docs/QWEN35_SPEED_COMPARISON.md",
         "docs/QWEN35_SPEED_COMPARISON_ZH.md",
     ):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        for artifact in ("candidate.jsonl", "qwen_reference.jsonl", "main_table.jsonl"):
+        for artifact in (
+            "rwkv_candidate.jsonl",
+            "qwen_reference.jsonl",
+            "paired_pd_table.jsonl",
+            "paired_validation.json",
+        ):
             assert f"]({artifact_root}{artifact})" in text
-        assert "`prefill_tokps_total`" in text
-        assert "`decode_tokps_total`" in text
+        assert "1.148668x/1.695334x/7.600590x" in text
+        assert "1.026173x/1.323737x/1.867427x" in text
+        assert "0.999992967" in text
 
 
 def test_comparison_docs_scope_5090_paired_decode_claim() -> None:
