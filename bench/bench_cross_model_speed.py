@@ -160,6 +160,12 @@ def validate_args(args: argparse.Namespace) -> None:
                 raise ValueError(
                     "--qwen-compile-mode must be reduce-overhead or max-autotune"
                 )
+        qwen_graph_conv_contract = (
+            "fla_triton"
+            if str(getattr(args, "benchmark_matrix", ""))
+            == "qwen35_v100_best_optimized_hf_v1"
+            else "causal_conv1d"
+        )
         graph_requirements = {
             "model_kind": (args.model_kind, "qwen35"),
             "model_role": (args.model_role, "reference"),
@@ -167,7 +173,7 @@ def validate_args(args: argparse.Namespace) -> None:
             "dtype": (args.dtype, "fp16"),
             "quantization": (args.quantization, "none"),
             "qwen_backend": (args.qwen_backend, "fla"),
-            "qwen_conv_backend": (qwen_conv_backend, "causal_conv1d"),
+            "qwen_conv_backend": (qwen_conv_backend, qwen_graph_conv_contract),
             "require_qwen_fast_path": (
                 bool(getattr(args, "require_qwen_fast_path", False)),
                 True,

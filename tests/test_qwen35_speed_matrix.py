@@ -1802,6 +1802,20 @@ def test_qwen_inductor_cudagraph_lane_is_strict_and_fail_closed() -> None:
     with pytest.raises(ValueError, match="strict Qwen reference lane"):
         validate_args(graph_worker_args(qwen_conv_backend="fla_triton"))
 
+    validate_args(
+        graph_worker_args(
+            benchmark_matrix="qwen35_v100_best_optimized_hf_v1",
+            qwen_conv_backend="fla_triton",
+        )
+    )
+    with pytest.raises(ValueError, match="strict Qwen reference lane"):
+        validate_args(
+            graph_worker_args(
+                benchmark_matrix="qwen35_v100_best_optimized_hf_v1",
+                qwen_conv_backend="causal_conv1d",
+            )
+        )
+
     passing = {
         "status": "pass",
         "optimization_lane": "qwen_best_optimized_hf",
