@@ -927,7 +927,9 @@ def validate_provenance(
         )
         expected_result = reference_by_name.get(result_path.name)
         if (
-            expected_result is None
+            not result_path.is_file()
+            or expected_result is None
+            or not expected_result.is_file()
             or result_path.read_bytes() != expected_result.read_bytes()
         ):
             errors.append(
