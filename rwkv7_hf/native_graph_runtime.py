@@ -420,6 +420,10 @@ class NativeGraphRunner:
             "sm120_wagv_bmm_g_effective": set(),
             "sm120_compiled_ffn_selected": set(),
             "sm120_compiled_ffn_effective": set(),
+            "sm70_wagv_lora_selected": set(),
+            "sm70_wagv_lora_effective": set(),
+            "fused_wavg_lora_selected": set(),
+            "fused_wavg_lora_effective": set(),
         }
         self.ada_wagv_bmm_requested = bool(
             _native_graph_ada_wagv_bmm_requested is not None
@@ -483,6 +487,7 @@ class NativeGraphRunner:
                     self.sparse_ffn_out[layer_index],
                     self.elapsed,
                     layer_index + 1 == self.num_layers,
+                    self._record_decode_route,
                 )
             hidden = F.layer_norm(
                 hidden, [self.hidden], self.norm_weight, self.norm_bias, 1e-5
@@ -682,6 +687,19 @@ class NativeGraphRunner:
             and compiled_selected_layers == expected_layers
             and compiled_effective_layers == expected_layers
         )
+        eligible_lora_layers = list(range(1, self.num_layers))
+        sm70_selected_layers = sorted(
+            self._decode_route_layers.get("sm70_wagv_lora_selected", set())
+        )
+        sm70_effective_layers = sorted(
+            self._decode_route_layers.get("sm70_wagv_lora_effective", set())
+        )
+        wavg_selected_layers = sorted(
+            self._decode_route_layers.get("fused_wavg_lora_selected", set())
+        )
+        wavg_effective_layers = sorted(
+            self._decode_route_layers.get("fused_wavg_lora_effective", set())
+        )
         preparation_stats = (
             sm120_compiled_ffn_preparation_stats(
                 getattr(self, "sm120_compiled_ffn_preparation", None)
@@ -710,6 +728,27 @@ class NativeGraphRunner:
             "ada_wagv_lora_extension_effective_layer_count": len(extension_layers),
             "ada_wagv_lora_extension_full_model_effective": extension_effective,
             "rkv_policy": str(getattr(self, "rkv_policy", "unavailable")),
+            "state_dtype": str(getattr(self, "state_dtype", "unavailable")),
+            "triton_fp16_state": bool(getattr(self, "triton_fp16_state", False)),
+            "fp16_recurrent": bool(getattr(self, "fp16_recurrent", False)),
+            "sm70_wagv_lora_selected": bool(sm70_selected_layers),
+            "sm70_wagv_lora_effective": bool(sm70_effective_layers),
+            "sm70_wagv_lora_selected_layers": sm70_selected_layers,
+            "sm70_wagv_lora_effective_layers": sm70_effective_layers,
+            "sm70_wagv_lora_effective_layer_count": len(sm70_effective_layers),
+            "sm70_wagv_lora_full_eligible_layers_effective": bool(
+                sm70_selected_layers == eligible_lora_layers
+                and sm70_effective_layers == eligible_lora_layers
+            ),
+            "fused_wavg_lora_selected": bool(wavg_selected_layers),
+            "fused_wavg_lora_effective": bool(wavg_effective_layers),
+            "fused_wavg_lora_selected_layers": wavg_selected_layers,
+            "fused_wavg_lora_effective_layers": wavg_effective_layers,
+            "fused_wavg_lora_effective_layer_count": len(wavg_effective_layers),
+            "fused_wavg_lora_full_eligible_layers_effective": bool(
+                wavg_selected_layers == eligible_lora_layers
+                and wavg_effective_layers == eligible_lora_layers
+            ),
             "ada_wagv_bmm_requested": bool(self.ada_wagv_bmm_requested),
             "ada_wagv_bmm_selected": bool(selected_layers),
             "ada_wagv_bmm_effective": bool(effective_layers),
