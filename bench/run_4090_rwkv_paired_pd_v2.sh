@@ -34,7 +34,8 @@ RWKV_15_MODEL="$(realpath -e -- "${RWKV_15_MODEL}")"
 RWKV_29_MODEL="$(realpath -e -- "${RWKV_29_MODEL}")"
 RWKV_72_MODEL="$(realpath -e -- "${RWKV_72_MODEL}")"
 if [[ "${PYTHON_BIN}" == */* ]]; then
-  PYTHON_BIN="$(realpath -e -- "${PYTHON_BIN}")"
+  python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"
+  PYTHON_BIN="${python_dir}/$(basename -- "${PYTHON_BIN}")"
 else
   PYTHON_BIN="$(command -v -- "${PYTHON_BIN}")"
 fi

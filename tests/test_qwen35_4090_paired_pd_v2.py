@@ -39,6 +39,8 @@ def test_4090_validator_strict_types_reject_bool_as_integer() -> None:
 def test_4090_runner_locks_commit_runtime_and_small_b8_bundle() -> None:
     source = RUNNER_PATH.read_text(encoding="utf-8")
     assert "validate_repository" in source
+    assert 'python_dir="$(realpath -e -- "$(dirname -- "${PYTHON_BIN}")")"' in source
+    assert 'PYTHON_BIN="${python_dir}/$(basename -- "${PYTHON_BIN}")"' in source
     assert '"python":"3.12.8"' in source
     assert '"torch":"2.7.1+cu126"' in source
     assert '"TORCH_CUDA_ARCH_LIST=8.9"' in source
