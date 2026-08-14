@@ -25,11 +25,17 @@ three model pairs that fit its 16 GiB capacity. Raw and parameter-adjusted
 Prefill and Decode pass every cell. RTX 3090 remains pending. No backend
 fallback or legacy result is merged into the current table.
 
+Tesla V100 now also has a strict four-pair, 48-cell P+D result. Fresh RWKV
+rows are joined to a SHA-locked Qwen reference from the same server and exact
+runtime. Raw and parameter-adjusted Prefill and Decode pass all 48 cells; the
+commits differ and the measurements were sequential, so this is not an
+interleaved A/B or continuous-E2E result.
+
 ## Fixed protocol (`hf_fast_path_v1`)
 
 | Axis | Required setting |
 |---|---|
-| GPU | One RTX 3090, RTX 4080, RTX 4090 or RTX 5090; one card per run |
+| GPU | One V100, RTX 3090, RTX 4080, RTX 4090 or RTX 5090; one card per run |
 | Pairs | RWKV 0.4/1.5/2.9/7.2B vs Qwen3.5 0.8/2/4/9B |
 | Precision | Dense FP16; quantization and MTP/speculative decode disabled |
 | Batch | 1 and 8 |
@@ -50,6 +56,7 @@ uses the capacity-safe three-pair subset, `3 × 2 × 3 × 2 = 36` cells per side
 | RTX 4090 | 96/96 | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; Decode Graph on | 48/48 | 48/48 / 48/48 | [immutable artifact](../bench/4090_hf_best_optimized_v1_20260812/README.md) |
 | RTX 3090 | pending | pending | pending | — | — | — |
 | RTX 4080 | 36 Qwen + 36 RWKV; 36 joined P+D cells | 36/36 pass, no fallback | 36/36 `best_optimized_hf`; native Graph Decode | 36/36 | 36/36 / 36/36 | [strict paired P+D artifact](../bench/4080_qwen35_paired_pd_v1_20260814/README.md) |
+| Tesla V100 | 48 Qwen + 48 RWKV; 48 joined P+D cells | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; native Graph Decode | 48/48 | 48/48 / 48/48 | [strict paired P+D artifact](../bench/v100_qwen35_paired_pd_v1_20260814/README.md) |
 | RTX 5090 | 48 Qwen + 48 RWKV; 48 joined Decode cells | 48/48 pass, no fallback | 48/48 `best_optimized_hf`; Decode Graph on | not gated | 48/48 telemetry / 48/48 strict | [paired Decode artifact](../bench/5090_qwen35_paired_decode_v1_20260813/README.md) |
 
 RTX 4090 now clears Qwen in every matched cell. Raw Prefill has
@@ -74,6 +81,14 @@ minimum/median/maximum `1.500014x/1.920082x/4.825638x`; raw Decode has
 `1.022115x/1.190224x/1.836279x`. The weakest adjusted Decode cell is
 0.4B/0.8B B8/P128/D128, where RWKV reaches 3,344 tok/s against Qwen's
 1,960 tok/s.
+
+Tesla V100 clears every one of the 48 cells on all four gates. Raw Prefill has
+minimum/median/maximum `2.249335x/4.744253x/13.714267x`; raw Decode has
+`1.393444x/2.398393x/4.662333x`. Parameter-adjusted Prefill has
+`1.808536x/3.217214x/8.216385x`; parameter-adjusted Decode has
+`1.120373x/1.617469x/2.793261x`. The weakest adjusted Decode cell is
+7.2B/9B B8/P128/D128, where RWKV reaches `267 tok/s` against Qwen's
+`191 tok/s`.
 
 The corrected Qwen Decode medians on RTX 4090 are:
 
@@ -116,6 +131,36 @@ continuous-E2E claim. See the
 [`README`](../bench/4080_qwen35_paired_pd_v1_20260814/README.md),
 [`paired table`](../bench/4080_qwen35_paired_pd_v1_20260814/paired_pd_table.jsonl),
 and [`validation`](../bench/4080_qwen35_paired_pd_v1_20260814/paired_validation.json).
+
+### Tesla V100 frozen-reference paired Prefill/Decode v1
+
+The 2026-08-14 artifact covers all four model pairs, B1/B8,
+P128/P512/P2048 and D128/D512. RWKV uses Native Graph; every B1 lane requires
+the real SM70 W/A/G/V extension and proves every eligible layer before graph
+capture. Qwen uses the official FLA operator route plus StaticCache raw CUDA
+Graph Decode; Qwen9 locks math-only SDPA.
+
+| RWKV / Qwen | Batch | RWKV P tok/s | Qwen P tok/s | Raw P | RWKV D tok/s | Qwen D tok/s | Raw D |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 0.4B / 0.8B | B1 | 17,822 | 4,117 | `4.384x` | 434 | 111 | `3.909x` |
+| 0.4B / 0.8B | B8 | 56,270 | 4,140 | `13.457x` | 1,784 | 688 | `2.596x` |
+| 1.5B / 2B | B1 | 11,167 | 3,672 | `3.055x` | 230 | 83.3 | `2.762x` |
+| 1.5B / 2B | B8 | 20,861 | 3,816 | `5.467x` | 841 | 517 | `1.630x` |
+| 2.9B / 4B | B1 | 7,066 | 1,382 | `5.109x` | 124 | 46.0 | `2.696x` |
+| 2.9B / 4B | B8 | 10,711 | 1,505 | `7.144x` | 536 | 275 | `1.950x` |
+| 7.2B / 9B | B1 | 3,758 | 1,174 | `3.142x` | 56.1 | 31.2 | `1.801x` |
+| 7.2B / 9B | B8 | 4,708 | 1,283 | `3.653x` | 267 | 164 | `1.632x` |
+
+These are six-cell lane medians; the validator gates every unrounded cell.
+All eight P2048/D512 FLA/native probes preserve 512 greedy tokens and finite
+Decode logits, with prompt/final minimum row cosine
+`0.999994457/0.999991894`. The additional 7.2B/B8/P128 native-eager versus
+native-graph closure also passes. Formal B8 timing replicates one prompt; only
+the correctness probes use distinct prompts. This is an engine-speed result,
+not model quality or continuous E2E. See the
+[`README`](../bench/v100_qwen35_paired_pd_v1_20260814/README.md),
+[`paired table`](../bench/v100_qwen35_paired_pd_v1_20260814/paired_pd_table.jsonl),
+and [`validation`](../bench/v100_qwen35_paired_pd_v1_20260814/paired_validation.json).
 
 ### RTX 5090 frozen-reference paired Decode v1
 
@@ -597,7 +642,8 @@ A complete run reports exit code 0, `pipeline_exit_code.txt=0`,
 
 | GPU | Live measurement entry point | Scope |
 |---|---|---|
-| V100 | [Commands in the V100 evidence](../bench/v100_active_b1b8_20260715/README.md#reproduce) | 1.5B/2B, B1/B8 |
+| V100 historical active-pair lane | [Commands in the V100 evidence](../bench/v100_active_b1b8_20260715/README.md#reproduce) | 1.5B/2B, B1/B8 |
+| V100 strict paired P+D v1 | [`bench/run_v100_rwkv_paired_pd_v1.sh`](../bench/run_v100_rwkv_paired_pd_v1.sh) + [`bench/run_v100_qwen35_paired_pd_v1.sh`](../bench/run_v100_qwen35_paired_pd_v1.sh) + [`bench/validate_qwen35_v100_paired_pd_v1.py`](../bench/validate_qwen35_v100_paired_pd_v1.py) | Frozen-reference 48+48 rows; raw and adjusted Prefill/Decode must all pass 48/48 |
 | RTX 3090 latest checkpoints | [`bench/run_3090_adjusted_prefill_pd.sh`](../bench/run_3090_adjusted_prefill_pd.sh) | Four model pairs, B1/B8, P128/512/2048, D128; strict per-cell adjusted-Prefill gate plus 25 correctness rows |
 | RTX 4080 | [`bench/run_4080_adjusted_pd.sh`](../bench/run_4080_adjusted_pd.sh) | Runs all three pairs at B1/B8 and requires adjusted P/D `>1.00x` in every one of the 36 cells |
 | RTX 4080 strict paired P+D v1 | [`bench/run_4080_rwkv_paired_pd_v1.sh`](../bench/run_4080_rwkv_paired_pd_v1.sh) + [`bench/run_4080_qwen35_paired_pd_v1.sh`](../bench/run_4080_qwen35_paired_pd_v1.sh) + [`bench/validate_qwen35_paired_pd_v1.py`](../bench/validate_qwen35_paired_pd_v1.py) | Same-runtime 36+36 rows; raw and adjusted Prefill/Decode must all pass 36/36 |

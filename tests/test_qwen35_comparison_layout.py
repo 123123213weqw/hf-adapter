@@ -140,3 +140,18 @@ def test_comparison_docs_scope_4080_paired_pd_claim() -> None:
         assert "1.051333x/1.313931x/2.891099x" in text
         assert "1.022115x/1.190224x/1.836279x" in text
         assert "36/36" in text
+
+
+def test_comparison_docs_scope_v100_paired_pd_claim() -> None:
+    artifact_root = "../bench/v100_qwen35_paired_pd_v1_20260814/"
+    for relative in (
+        "docs/QWEN35_SPEED_COMPARISON.md",
+        "docs/QWEN35_SPEED_COMPARISON_ZH.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert f"]({artifact_root}README.md)" in text
+        assert f"]({artifact_root}paired_pd_table.jsonl)" in text
+        assert f"]({artifact_root}paired_validation.json)" in text
+        assert "1.808536x/3.217214x/8.216385x" in text
+        assert "1.120373x/1.617469x/2.793261x" in text
+        assert "48/48" in text
