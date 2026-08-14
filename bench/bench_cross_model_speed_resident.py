@@ -99,6 +99,11 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "causal_conv1d", "fla_triton"],
         default="auto",
     )
+    ap.add_argument(
+        "--qwen-sdpa-policy",
+        choices=["auto", "math_only"],
+        default="auto",
+    )
     ap.add_argument("--require-qwen-fast-path", action="store_true")
     ap.add_argument(
         "--qwen-decode-optimization",
@@ -306,6 +311,7 @@ def main() -> int:
             effective_model_path,
             trust_remote_code=args.model_kind == "rwkv",
         )
+        speed.configure_qwen_sdpa_policy(args)
         seed_args = cell_args(
             args,
             cells[0][0],

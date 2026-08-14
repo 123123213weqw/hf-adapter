@@ -15,6 +15,8 @@ def test_v100_qwen_runner_locks_sm70_fla_triton_raw_graph() -> None:
     assert "--benchmark-matrix qwen35_v100_best_optimized_hf_v1" in script
     assert "--qwen-conv-backend fla_triton" in script
     assert "static_cache_raw_cudagraph" in script
+    assert '--qwen-sdpa-policy "${QWEN_SDPA_POLICY}"' in script
+    assert '"sdpa_policy": sdpa_policy' in script
     assert '"triton": "3.4.0"' in script
     assert '"causal_conv1d": None' in script
     assert "PYTHONPATH=${ROOT}:${TRITON_TARGET}:${FLA_TARGET}" in script
@@ -40,6 +42,8 @@ def test_v100_top_level_is_append_never_and_includes_9b() -> None:
     assert "QWEN_9_MODEL" in script
     assert "qwen_9b.jsonl" in script
     assert "rwkv-7.2b__qwen3.5-9b" in script
+    assert "qwen3.5-9b 9b static_cache_raw_cudagraph math_only" in script
+    assert script.count("static_cache_raw_cudagraph auto") == 3
     assert "validate_qwen35_v100_paired_pd_v1.py" in script
 
 

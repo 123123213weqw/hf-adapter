@@ -62,6 +62,12 @@ RWKV_SIZES = {
     PAIRS[3]: ("7.2b", 32),
 }
 QWEN_ROUTES = {pair: "static_cache_raw_cudagraph" for pair in PAIRS}
+QWEN_SDPA_POLICIES = {
+    PAIRS[0]: "auto",
+    PAIRS[1]: "auto",
+    PAIRS[2]: "auto",
+    PAIRS[3]: "math_only",
+}
 EXPECTED_KEYS = {
     (pair, batch, prompt, decode)
     for pair in PAIRS
@@ -187,7 +193,6 @@ def _validate_candidate_row(
         ("cache_type", "NativeRWKV7Cache"),
     ):
         _require(row, field, expected, errors)
-
     pair = row.get("model_pair")
     if pair not in PAIRS:
         errors.append(f"{row.get('_source', '<row>')}: unexpected model_pair={pair!r}")
@@ -254,6 +259,24 @@ def _validate_candidate_row(
         errors.append(
             f"{row.get('_source', '<row>')}: benchmark_repository_commit must be 40 hex"
         )
+
+
+def _validate_qwen_sdpa_row(row: dict[str, Any], errors: list[str]) -> None:
+    pair = row.get("model_pair")
+    if pair not in QWEN_SDPA_POLICIES:
+        errors.append(f"unexpected Qwen model_pair {pair!r}")
+        return
+    policy = QWEN_SDPA_POLICIES[pair]
+    automatic = policy == "auto"
+    for field, expected in (
+        ("qwen_sdpa_policy_requested", policy),
+        ("qwen_sdpa_policy_effective", policy),
+        ("qwen_sdp_flash_enabled", automatic),
+        ("qwen_sdp_mem_efficient_enabled", automatic),
+        ("qwen_sdp_math_enabled", True),
+        ("qwen_sdp_cudnn_enabled", automatic),
+    ):
+        _require(row, field, expected, errors)
 
 
 def _index_rows(
@@ -332,6 +355,7 @@ def validate_paired_pd(
         pair = row.get("model_pair")
         if pair in PARAMETERS:
             _require(row, "active_parameter_count", PARAMETERS[pair][1], errors)
+        _validate_qwen_sdpa_row(row, errors)
 
     candidate_runtime = {_runtime_signature(row) for row in candidate_rows}
     reference_runtime = {_runtime_signature(row) for row in reference_rows}
@@ -917,6 +941,7 @@ def validate_provenance(
             ("protocol", "qwen35_v100_best_optimized_hf_v1"),
             ("repository_clean_pre_and_post", True),
             ("decode_route", QWEN_ROUTES[pair]),
+            ("sdpa_policy", QWEN_SDPA_POLICIES[pair]),
             ("compile_mode", None),
         ):
             if not _strict_equal(qwen.get(field), expected):

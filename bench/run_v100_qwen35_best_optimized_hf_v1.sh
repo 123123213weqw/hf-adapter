@@ -12,6 +12,7 @@ RESULT_NAME="${RESULT_NAME:-qwen_${MODEL_SIZE_LABEL//./p}.jsonl}"
 REPOSITORY_COMMIT="${REPOSITORY_COMMIT:-}"
 QWEN_COMPILE_MODE="${QWEN_COMPILE_MODE:-max-autotune}"
 QWEN_DECODE_OPTIMIZATION="${QWEN_DECODE_OPTIMIZATION:-static_cache_raw_cudagraph}"
+QWEN_SDPA_POLICY="${QWEN_SDPA_POLICY:-auto}"
 CACHE_ROOT="${CACHE_ROOT:-}"
 CUDA_TOOLKIT_VIEW="${CUDA_TOOLKIT_VIEW:-}"
 FLA_TARGET="${FLA_TARGET:-}"
@@ -31,6 +32,10 @@ if [[ "${QWEN_DECODE_OPTIMIZATION}" != "module_call_dynamic" && "${QWEN_DECODE_O
 fi
 if [[ "${QWEN_DECODE_OPTIMIZATION}" == "static_cache_inductor_cudagraph" && "${QWEN_COMPILE_MODE}" != "reduce-overhead" && "${QWEN_COMPILE_MODE}" != "max-autotune" ]]; then
   echo "QWEN_COMPILE_MODE must be reduce-overhead or max-autotune" >&2
+  exit 2
+fi
+if [[ "${QWEN_SDPA_POLICY}" != "auto" && "${QWEN_SDPA_POLICY}" != "math_only" ]]; then
+  echo "QWEN_SDPA_POLICY must be auto or math_only" >&2
   exit 2
 fi
 
@@ -188,6 +193,7 @@ env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" bench/bench_cross_model_speed_resident
   --runs 7 \
   --qwen-backend fla \
   --qwen-conv-backend fla_triton \
+  --qwen-sdpa-policy "${QWEN_SDPA_POLICY}" \
   --require-qwen-fast-path \
   --qwen-decode-optimization "${QWEN_DECODE_OPTIMIZATION}" \
   --qwen-compile-mode "${QWEN_COMPILE_MODE}" \
@@ -201,12 +207,12 @@ cmp --silent "${model_hashes}" "${model_hashes_after}" || {
   exit 2
 }
 validate_repository_provenance
-env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" - "${route_manifest}" "${result}" "${model_hashes}" "${model_hashes_after}" "${MODEL_PAIR}" "${MODEL_SIZE_LABEL}" "${MODEL}" "${QWEN_DECODE_OPTIMIZATION}" "${QWEN_COMPILE_MODE}" "${CACHE_ROOT}" "${REPOSITORY_COMMIT}" "${TRITON_TARGET}" "${FLA_TARGET}" <<'PY'
+env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" - "${route_manifest}" "${result}" "${model_hashes}" "${model_hashes_after}" "${MODEL_PAIR}" "${MODEL_SIZE_LABEL}" "${MODEL}" "${QWEN_DECODE_OPTIMIZATION}" "${QWEN_COMPILE_MODE}" "${QWEN_SDPA_POLICY}" "${CACHE_ROOT}" "${REPOSITORY_COMMIT}" "${TRITON_TARGET}" "${FLA_TARGET}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
 
 manifest, result, before, after = map(Path, sys.argv[1:5])
-pair, size, model, route, compile_mode, cache_root, commit, triton_target, fla_target = sys.argv[5:14]
+pair, size, model, route, compile_mode, sdpa_policy, cache_root, commit, triton_target, fla_target = sys.argv[5:15]
 
 def artifact(path):
     return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -228,6 +234,7 @@ doc = {
         "byte_identical": before.read_bytes() == after.read_bytes(),
     },
     "decode_route": route,
+    "sdpa_policy": sdpa_policy,
     "compile_mode": compile_mode if route == "static_cache_inductor_cudagraph" else None,
     "forced_environment": {
         "CUDA_VISIBLE_DEVICES": "0",

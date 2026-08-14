@@ -65,16 +65,17 @@ OUT_DIR="${OUT_DIR}" CACHE_ROOT="${CACHE_ROOT}/rwkv" \
   bash "${ROOT}/bench/run_v100_rwkv_paired_pd_v1.sh"
 
 run_qwen() {
-  local tag="$1" model="$2" pair="$3" size="$4" route="$5"
+  local tag="$1" model="$2" pair="$3" size="$4" route="$5" sdpa_policy="$6"
   OUT_DIR="${OUT_DIR}" MODEL="${model}" MODEL_PAIR="${pair}" MODEL_SIZE_LABEL="${size}" \
     RESULT_NAME="qwen_${tag}.jsonl" CACHE_ROOT="${CACHE_ROOT}/qwen_${tag}" \
     QWEN_DECODE_OPTIMIZATION="${route}" QWEN_COMPILE_MODE=max-autotune \
+    QWEN_SDPA_POLICY="${sdpa_policy}" \
     bash "${ROOT}/bench/run_v100_qwen35_best_optimized_hf_v1.sh"
 }
-run_qwen 0p8 "${QWEN_08_MODEL}" rwkv-0.4b__qwen3.5-0.8b 0.8b static_cache_raw_cudagraph
-run_qwen 2b "${QWEN_2_MODEL}" rwkv-1.5b__qwen3.5-2b 2b static_cache_raw_cudagraph
-run_qwen 4b "${QWEN_4_MODEL}" rwkv-2.9b__qwen3.5-4b 4b static_cache_raw_cudagraph
-run_qwen 9b "${QWEN_9_MODEL}" rwkv-7.2b__qwen3.5-9b 9b static_cache_raw_cudagraph
+run_qwen 0p8 "${QWEN_08_MODEL}" rwkv-0.4b__qwen3.5-0.8b 0.8b static_cache_raw_cudagraph auto
+run_qwen 2b "${QWEN_2_MODEL}" rwkv-1.5b__qwen3.5-2b 2b static_cache_raw_cudagraph auto
+run_qwen 4b "${QWEN_4_MODEL}" rwkv-2.9b__qwen3.5-4b 4b static_cache_raw_cudagraph auto
+run_qwen 9b "${QWEN_9_MODEL}" rwkv-7.2b__qwen3.5-9b 9b static_cache_raw_cudagraph math_only
 
 reference="${OUT_DIR}/qwen_reference.jsonl"
 [[ ! -e "${reference}" ]] || { echo "refusing to overwrite ${reference}" >&2; exit 2; }

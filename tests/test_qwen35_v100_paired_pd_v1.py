@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import runpy
+from argparse import Namespace
 from pathlib import Path
 
+import torch
+
+from bench.bench_cross_model_speed import configure_qwen_sdpa_policy
 from bench.validate_qwen35_best_optimized_hf_v1 import validate_matrix
 from bench.validate_qwen35_v100_paired_pd_v1 import (
     PAIRS,
@@ -10,7 +14,9 @@ from bench.validate_qwen35_v100_paired_pd_v1 import (
     QWEN_LANE,
     QWEN_MATRIX,
     QWEN_ROUTES,
+    QWEN_SDPA_POLICIES,
     _validate_candidate_row,
+    _validate_qwen_sdpa_row,
     validate_correctness_manifest,
     validate_provenance,
 )
@@ -26,6 +32,8 @@ def v100_qwen_rows() -> list[dict]:
     rows = complete_rows()
     for item in rows:
         use_raw_graph(item)
+        sdpa_policy = QWEN_SDPA_POLICIES[item["model_pair"]]
+        automatic = sdpa_policy == "auto"
         item.update(
             {
                 "benchmark_matrix": QWEN_MATRIX,
@@ -38,6 +46,12 @@ def v100_qwen_rows() -> list[dict]:
                 "qwen_causal_conv1d_importable": False,
                 "qwen_conv_backend_effective": "fla_triton",
                 "causal_conv1d_version": None,
+                "qwen_sdpa_policy_requested": sdpa_policy,
+                "qwen_sdpa_policy_effective": sdpa_policy,
+                "qwen_sdp_flash_enabled": automatic,
+                "qwen_sdp_mem_efficient_enabled": automatic,
+                "qwen_sdp_math_enabled": True,
+                "qwen_sdp_cudnn_enabled": automatic,
             }
         )
     return rows
@@ -171,6 +185,36 @@ def test_v100_qwen_profile_accepts_fla_triton_raw_graph() -> None:
     )
     assert summary["status"] == "pass", summary["errors"]
     assert summary["reference_rows"] == 48
+
+
+def test_v100_qwen_sdpa_policy_is_exact_per_model() -> None:
+    rows = v100_qwen_rows()
+    for item in rows:
+        errors: list[str] = []
+        _validate_qwen_sdpa_row(item, errors)
+        assert errors == []
+
+    qwen9 = next(item for item in rows if item["model_pair"] == PAIRS[3])
+    qwen9["qwen_sdp_mem_efficient_enabled"] = True
+    errors = []
+    _validate_qwen_sdpa_row(qwen9, errors)
+    assert any("qwen_sdp_mem_efficient_enabled" in error for error in errors)
+
+
+def test_qwen_math_only_sdpa_policy_disables_fused_backends() -> None:
+    args = Namespace(model_kind="qwen35", qwen_sdpa_policy="math_only")
+    try:
+        configure_qwen_sdpa_policy(args)
+        assert args._qwen_sdpa_policy_effective == "math_only"
+        assert torch.backends.cuda.flash_sdp_enabled() is False
+        assert torch.backends.cuda.mem_efficient_sdp_enabled() is False
+        assert torch.backends.cuda.math_sdp_enabled() is True
+        if callable(getattr(torch.backends.cuda, "cudnn_sdp_enabled", None)):
+            assert torch.backends.cuda.cudnn_sdp_enabled() is False
+    finally:
+        configure_qwen_sdpa_policy(
+            Namespace(model_kind="qwen35", qwen_sdpa_policy="auto")
+        )
 
 
 def test_v100_candidate_routes_are_exact_for_b1_and_b8() -> None:
