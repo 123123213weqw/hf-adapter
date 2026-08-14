@@ -215,8 +215,12 @@ run_fla() {
   local tag="$1" model="$2" pair="$3" size="$4" batch="$5"
   local row="${OUT_DIR}/decode_correctness_${tag}_b${batch}_fla.jsonl"
   local probe="${OUT_DIR}/decode_correctness_${tag}_b${batch}_fla.pt"
+  local cache="${CACHE_ROOT}/fla_${tag}_b${batch}"
+  mkdir -p "${cache}/inductor" "${cache}/triton" "${cache}/xdg"
   env -i "${COMMON_ENV[@]}" "RWKV7_FAST_TOKEN_BACKEND=fla" "RWKV7_NATIVE_MODEL=0" \
     "RWKV7_NATIVE_MODEL_BACKEND=eager" "RWKV7_FAST_PREFILL=0" "RWKV7_NATIVE_PREFILL_GRAPH=0" \
+    "TORCH_COMPILE_DISABLE=1" "TORCHDYNAMO_DISABLE=1" \
+    "XDG_CACHE_HOME=${cache}/xdg" "TORCHINDUCTOR_CACHE_DIR=${cache}/inductor" "TRITON_CACHE_DIR=${cache}/triton" \
     "${PYTHON_BIN}" bench/bench_cross_model_speed_resident.py \
       --model "${model}" --model-kind rwkv --model-role candidate --model-pair "${pair}" \
       --model-size-label "${size}" --benchmark-matrix "${CORRECTNESS_PROTOCOL}" \

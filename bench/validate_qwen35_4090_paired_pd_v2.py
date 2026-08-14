@@ -304,13 +304,20 @@ def _validate_correctness(
             ):
                 errors.append(f"correctness entry {key!r} {label} comparison failed")
             for axis in ("prompt_logits", "final_logits"):
-                cosine = result.get(axis, {}).get("min_row_cosine")
+                cosine = result.get(f"{axis}_cosine")
                 if not _finite(cosine) or cosine < 0.9999:
                     errors.append(
                         f"correctness entry {key!r} {label} {axis} cosine failed"
                     )
                 elif label == "recomputed":
                     min_cosine = min(min_cosine, float(cosine))
+                if (
+                    result.get(f"{axis}_shape_match") is not True
+                    or result.get(f"{axis}_finite") is not True
+                ):
+                    errors.append(
+                        f"correctness entry {key!r} {label} {axis} shape/finite failed"
+                    )
         for probe, label in ((reference, "FLA"), (native, "native")):
             if probe.get("decode_logits_all_finite") is not True:
                 errors.append(

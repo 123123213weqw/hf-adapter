@@ -47,6 +47,7 @@ def test_4090_runner_locks_commit_runtime_and_small_b8_bundle() -> None:
     assert '"RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=1"' in source
     assert '"RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=1"' in source
     assert '"RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=1"' in source
+    assert '"TORCH_COMPILE_DISABLE=1" "TORCHDYNAMO_DISABLE=1"' in source
     assert '--probe-tokens 512 --probe-batch-size "${batch}"' in source
 
 
@@ -57,3 +58,10 @@ def test_4090_validator_requires_strict_unrounded_four_axis_pass() -> None:
     assert (
         "all 48 cells must strictly pass raw and adjusted Prefill and Decode" in source
     )
+
+
+def test_4090_correctness_validator_uses_flat_probe_comparison_schema() -> None:
+    source = VALIDATOR_PATH.read_text(encoding="utf-8")
+    assert 'result.get(f"{axis}_cosine")' in source
+    assert 'result.get(f"{axis}_shape_match")' in source
+    assert 'result.get(f"{axis}_finite")' in source
