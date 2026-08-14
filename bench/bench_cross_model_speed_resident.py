@@ -250,6 +250,10 @@ def cell_args(args: argparse.Namespace, batch_size: int, prompt_tokens: int, dec
         rwkv_implementation=getattr(args, "rwkv_implementation", "auto"),
         qwen_backend=args.qwen_backend,
         qwen_conv_backend=getattr(args, "qwen_conv_backend", "auto"),
+        qwen_sdpa_policy=getattr(args, "qwen_sdpa_policy", "auto"),
+        _qwen_sdpa_policy_effective=getattr(
+            args, "_qwen_sdpa_policy_effective", "auto"
+        ),
         require_qwen_fast_path=args.require_qwen_fast_path,
         qwen_decode_optimization=getattr(
             args, "qwen_decode_optimization", "module_call_dynamic"

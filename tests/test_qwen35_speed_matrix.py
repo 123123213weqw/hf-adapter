@@ -611,6 +611,8 @@ def test_resident_worker_forwards_probe_defaults_to_shared_worker() -> None:
         rwkv_code_source="repo",
         qwen_backend="auto",
         qwen_conv_backend="fla_triton",
+        qwen_sdpa_policy="auto",
+        _qwen_sdpa_policy_effective="auto",
         require_qwen_fast_path=False,
         probe_output="",
         probe_tokens=8,
@@ -621,7 +623,18 @@ def test_resident_worker_forwards_probe_defaults_to_shared_worker() -> None:
     assert forwarded.probe_tokens == 8
     assert forwarded.rwkv_implementation == "auto"
     assert forwarded.qwen_conv_backend == "fla_triton"
+    assert forwarded.qwen_sdpa_policy == "auto"
+    assert forwarded._qwen_sdpa_policy_effective == "auto"
     validate_args(forwarded)
+
+    qwen_args = Namespace(**vars(args))
+    qwen_args.model_kind = "qwen35"
+    qwen_args.qwen_sdpa_policy = "math_only"
+    qwen_args._qwen_sdpa_policy_effective = "math_only"
+    qwen_forwarded = cell_args(qwen_args, 8, 128, 128)
+    assert qwen_forwarded.qwen_sdpa_policy == "math_only"
+    assert qwen_forwarded._qwen_sdpa_policy_effective == "math_only"
+    validate_args(qwen_forwarded)
 
 
 def test_resident_worker_accepts_exact_non_cartesian_shapes() -> None:
