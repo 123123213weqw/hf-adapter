@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import runpy
+import hashlib
+import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -10,16 +12,20 @@ from bench.bench_cross_model_speed import configure_qwen_sdpa_policy
 from bench.validate_qwen35_best_optimized_hf_v1 import validate_matrix
 from bench.validate_qwen35_v100_paired_pd_v1 import (
     PAIRS,
+    PARAMETERS,
     QWEN_CONTRACT,
     QWEN_LANE,
     QWEN_MATRIX,
     QWEN_ROUTES,
     QWEN_SDPA_POLICIES,
+    RWKV_SIZES,
     _validate_candidate_row,
     _validate_qwen_sdpa_row,
+    _validate_targeted_same_implementation_closure,
     validate_correctness_manifest,
     validate_provenance,
 )
+from bench.compare_rwkv_prefill_probe import compare as compare_rwkv_probes
 
 HELPERS = runpy.run_path(
     str(Path(__file__).with_name("test_qwen35_best_optimized_hf_v1.py"))
@@ -57,14 +63,15 @@ def v100_qwen_rows() -> list[dict]:
     return rows
 
 
-def v100_candidate(batch: int) -> dict:
+def v100_candidate(batch: int, pair: str = PAIRS[0]) -> dict:
+    size, layer_count = RWKV_SIZES[pair]
     item = {
         "axis": "qwen35_cross_model_speed",
         "benchmark_matrix": "qwen35_v100_paired_pd_v1",
         "benchmark_repository_commit": "1" * 40,
         "optimization_lane": "best_optimized_hf",
-        "model_pair": PAIRS[0],
-        "model_size_label": "0.4b",
+        "model_pair": pair,
+        "model_size_label": size,
         "model_role": "candidate",
         "model_kind": "rwkv",
         "rwkv_implementation_requested": "auto",
@@ -93,7 +100,7 @@ def v100_candidate(batch: int) -> dict:
         "effective_backend": "native_graph",
         "step_backend": "rwkv_fast_token",
         "cache_type": "NativeRWKV7Cache",
-        "active_parameter_count": 450_767_872,
+        "active_parameter_count": PARAMETERS[pair][0],
         "prefill_sec_samples": [0.05] * 7,
         "prefill_sec_median": 0.05,
         "prefill_sec_median_raw": 0.05,
@@ -109,14 +116,21 @@ def v100_candidate(batch: int) -> dict:
         "fla_version": "0.5.1",
         "causal_conv1d_version": None,
     }
-    layer_indices = list(range(1, 24))
+    layer_indices = list(range(1, layer_count))
+    fp16_state = batch == 8 and (pair in PAIRS[:2] or pair == PAIRS[3])
     item.update(
         {
-            "rwkv_native_graph_rkv_policy": "manual",
-            "rwkv_native_graph_state_dtype": (
-                "torch.float16" if batch == 8 else "torch.float32"
+            "rwkv_native_graph_rkv_policy": (
+                "vkwr_auto" if pair == PAIRS[3] and batch == 8 else "manual"
             ),
-            "rwkv_native_graph_triton_fp16_state": batch == 8,
+            "rwkv_native_graph_fused_norm_mix_num_warps": (
+                8 if pair == PAIRS[3] and batch == 8 else 4
+            ),
+            "rwkv_native_graph_state_dtype": (
+                "torch.float16" if fp16_state else "torch.float32"
+            ),
+            "rwkv_native_graph_triton_fp16_state": fp16_state,
+            "rwkv_native_graph_fp16_recurrent": False,
             "rwkv_native_graph_sm70_wagv_lora_selected": batch == 1,
             "rwkv_native_graph_sm70_wagv_lora_effective": batch == 1,
             "rwkv_native_graph_sm70_wagv_lora_selected_layers": (
@@ -126,24 +140,28 @@ def v100_candidate(batch: int) -> dict:
                 layer_indices if batch == 1 else []
             ),
             "rwkv_native_graph_sm70_wagv_lora_effective_layer_count": (
-                23 if batch == 1 else 0
+                layer_count - 1 if batch == 1 else 0
             ),
             "rwkv_native_graph_sm70_wagv_lora_full_eligible_layers_effective": (
                 batch == 1
             ),
-            "rwkv_native_graph_fused_wavg_lora_selected": batch == 8,
-            "rwkv_native_graph_fused_wavg_lora_effective": batch == 8,
+            "rwkv_native_graph_fused_wavg_lora_selected": (
+                batch == 8 and pair != PAIRS[3]
+            ),
+            "rwkv_native_graph_fused_wavg_lora_effective": (
+                batch == 8 and pair != PAIRS[3]
+            ),
             "rwkv_native_graph_fused_wavg_lora_selected_layers": (
-                layer_indices if batch == 8 else []
+                layer_indices if batch == 8 and pair != PAIRS[3] else []
             ),
             "rwkv_native_graph_fused_wavg_lora_effective_layers": (
-                layer_indices if batch == 8 else []
+                layer_indices if batch == 8 and pair != PAIRS[3] else []
             ),
             "rwkv_native_graph_fused_wavg_lora_effective_layer_count": (
-                23 if batch == 8 else 0
+                layer_count - 1 if batch == 8 and pair != PAIRS[3] else 0
             ),
             "rwkv_native_graph_fused_wavg_lora_full_eligible_layers_effective": (
-                batch == 8
+                batch == 8 and pair != PAIRS[3]
             ),
             "rwkv_native_graph_ada_wagv_bmm_requested": False,
             "rwkv_native_graph_ada_wagv_bmm_selected": False,
@@ -218,14 +236,34 @@ def test_qwen_math_only_sdpa_policy_disables_fused_backends() -> None:
 
 
 def test_v100_candidate_routes_are_exact_for_b1_and_b8() -> None:
-    for batch in (1, 8):
+    for pair in (PAIRS[0], PAIRS[3]):
+        for batch in (1, 8):
+            errors: list[str] = []
+            _validate_candidate_row(
+                v100_candidate(batch, pair),
+                expected_device="Tesla V100-PCIE-32GB",
+                errors=errors,
+            )
+            assert errors == []
+
+
+def test_v100_7p2_b8_closure_route_is_fail_closed() -> None:
+    item = v100_candidate(8, PAIRS[3])
+    for field, bad in (
+        ("rwkv_native_graph_rkv_policy", "manual"),
+        ("rwkv_native_graph_fused_norm_mix_num_warps", 4),
+        ("rwkv_native_graph_state_dtype", "torch.float32"),
+        ("rwkv_native_graph_triton_fp16_state", False),
+    ):
+        changed = dict(item)
+        changed[field] = bad
         errors: list[str] = []
         _validate_candidate_row(
-            v100_candidate(batch),
+            changed,
             expected_device="Tesla V100-PCIE-32GB",
             errors=errors,
         )
-        assert errors == []
+        assert any(field in error for error in errors)
 
 
 def test_v100_candidate_rejects_route_telemetry_pollution() -> None:
@@ -256,3 +294,109 @@ def test_v100_evidence_parsers_fail_closed_on_malformed_inputs(tmp_path) -> None
         candidate_model_hashes_path=malformed,
     )
     assert provenance["status"] == "fail"
+
+
+def test_v100_targeted_native_eager_closure_is_bound_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    model_path = "/models/rwkv7-g1i-7.2b-hf"
+    formal = v100_candidate(8, PAIRS[3])
+    formal["model_id_or_path"] = model_path
+    reference = {
+        **formal,
+        "rwkv_fast_token_backend_requested": "module_call",
+        "rwkv_native_model_backend_requested": "eager",
+        "effective_backend": "eager",
+        "warmup": 1,
+        "runs": 1,
+    }
+    candidate = {
+        **formal,
+        "warmup": 3,
+        "runs": 7,
+    }
+    reference_row = tmp_path / "reference.jsonl"
+    candidate_row = tmp_path / "candidate.jsonl"
+    reference_row.write_text(json.dumps(reference) + "\n", encoding="utf-8")
+    candidate_row.write_text(json.dumps(candidate) + "\n", encoding="utf-8")
+    probe = {
+        "input_ids": torch.arange(8 * 128).reshape(8, 128),
+        "greedy_tokens": torch.arange(512 * 8).reshape(512, 8),
+        "prompt_logits": torch.arange(1, 33, dtype=torch.float32).reshape(8, 4),
+        "final_logits": torch.arange(1, 33, dtype=torch.float32).reshape(8, 4),
+        "decode_logits_all_finite": True,
+        "decode_logits_finite_by_batch": torch.ones(8, dtype=torch.bool),
+        "probe_batch_size": 8,
+        "probe_tokens": 512,
+        "distinct_batch_prompts": True,
+    }
+    reference_probe = tmp_path / "reference.pt"
+    candidate_probe = tmp_path / "candidate.pt"
+    torch.save(probe, reference_probe)
+    torch.save(probe, candidate_probe)
+    comparison = compare_rwkv_probes(probe, probe, 0.9999)
+    comparison["contract_errors"] = []
+    comparison_path = tmp_path / "comparison.json"
+    comparison_path.write_text(json.dumps(comparison), encoding="utf-8")
+
+    def artifact(path: Path) -> dict[str, str]:
+        return {
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+
+    closure = {
+        "model_pair": PAIRS[3],
+        "model_size_label": "7.2b",
+        "model_path": model_path,
+        "batch_size": 8,
+        "prompt_tokens": 128,
+        "decode_tokens": 128,
+        "probe_tokens": 512,
+        "reference_contract": {
+            "rwkv_implementation": "native_model",
+            "effective_backend": "eager",
+            "RWKV7_FAST_TOKEN_BACKEND": "module_call",
+            "RWKV7_NATIVE_MODEL_BACKEND": "eager",
+            "RWKV7_FAST_PREFILL": "0",
+            "RWKV7_NATIVE_PREFILL_GRAPH": "0",
+        },
+        "candidate_contract": {
+            "rwkv_implementation": "native_model",
+            "effective_backend": "native_graph",
+            "rkv_policy": "vkwr_auto",
+            "state_dtype": "torch.float16",
+            "triton_fp16_state": True,
+            "fused_norm_mix_num_warps": 8,
+            "fused_wavg_lora": False,
+        },
+        "native_eager_reference": {
+            "row": artifact(reference_row),
+            "probe": artifact(reference_probe),
+        },
+        "native_graph_candidate": {
+            "row": artifact(candidate_row),
+            "probe": artifact(candidate_probe),
+        },
+        "comparison": artifact(comparison_path),
+    }
+    errors: list[str] = []
+    result = _validate_targeted_same_implementation_closure(
+        {"targeted_same_implementation_closure": closure},
+        tmp_path / "manifest.json",
+        {(PAIRS[3], 8, 128, 128): formal},
+        errors,
+    )
+    assert result["status"] == "pass", errors
+    assert errors == []
+
+    closure["candidate_contract"]["fused_wavg_lora"] = True
+    errors = []
+    result = _validate_targeted_same_implementation_closure(
+        {"targeted_same_implementation_closure": closure},
+        tmp_path / "manifest.json",
+        {(PAIRS[3], 8, 128, 128): formal},
+        errors,
+    )
+    assert result["status"] == "fail"
+    assert any("candidate contract mismatch" in error for error in errors)

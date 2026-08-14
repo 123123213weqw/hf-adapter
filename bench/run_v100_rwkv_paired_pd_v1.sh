@@ -153,6 +153,13 @@ hash_models "${MODEL_HASHES}"
 run_native_lane() {
   local tag="$1" pair="$2" size="$3" model="$4" batch="$5"
   local require_extension=0 rkv_policy=manual
+  local norm_mix_warps=4
+  local fused_wavg_lora=1
+  if [[ "${tag}" == "7p2" && "${batch}" == "8" ]]; then
+    rkv_policy=vkwr_auto
+    norm_mix_warps=8
+    fused_wavg_lora=0
+  fi
   local result="${OUT_DIR}/rwkv_${tag}_b${batch}.jsonl"
   local probe="${OUT_DIR}/decode_correctness_${tag}_b${batch}_native.pt"
   local log="${OUT_DIR}/logs/rwkv_${tag}_b${batch}.log"
@@ -160,6 +167,8 @@ run_native_lane() {
     "RWKV7_FAST_TOKEN_BACKEND=native_graph" "RWKV7_NATIVE_MODEL_BACKEND=native_graph" \
     "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=${require_extension}" \
     "RWKV7_NATIVE_GRAPH_RKV_POLICY=${rkv_policy}" \
+    "RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS=${norm_mix_warps}" \
+    "RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA=${fused_wavg_lora}" \
     "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=0" "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0" \
     "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0" \
     "${PYTHON_BIN}" "${ROOT}/bench/bench_cross_model_speed_resident.py" \
@@ -199,6 +208,54 @@ run_fla_reference() {
       > "${log}" 2>&1
 }
 
+run_native_eager_closure_reference() {
+  local result="${OUT_DIR}/decode_correctness_7p2_b8_p128_native_eager.jsonl"
+  local probe="${OUT_DIR}/decode_correctness_7p2_b8_p128_native_eager.pt"
+  local log="${OUT_DIR}/logs/decode_correctness_7p2_b8_p128_native_eager.log"
+  env -i "${COMMON_ENV[@]}" \
+    "RWKV7_FAST_TOKEN_BACKEND=module_call" "RWKV7_NATIVE_MODEL_BACKEND=eager" \
+    "RWKV7_FAST_PREFILL=0" "RWKV7_NATIVE_PREFILL_GRAPH=0" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=0" \
+    "RWKV7_NATIVE_GRAPH_RKV_POLICY=manual" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=0" "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0" \
+    "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0" \
+    "TORCHDYNAMO_DISABLE=1" "TORCH_COMPILE_DISABLE=1" \
+    "${PYTHON_BIN}" "${ROOT}/bench/bench_cross_model_speed_resident.py" \
+      --model "${RWKV_72_MODEL}" --model-kind rwkv --model-role candidate \
+      --model-pair rwkv-7.2b__qwen3.5-9b --model-size-label 7.2b \
+      --benchmark-matrix "${CORRECTNESS_PROTOCOL}" --optimization-lane native_eager_reference \
+      --dtype fp16 --quantization none --device cuda --cells 8x128x128 \
+      --prefill-chunk-size 512 --warmup 1 --runs 1 --rwkv-attn-mode fused_recurrent \
+      --rwkv-code-source repo --rwkv-implementation auto \
+      --probe-output "${probe}" --probe-cell 8x128x128 \
+      --probe-tokens 512 --probe-batch-size 8 --fail-fast --results "${result}" \
+      > "${log}" 2>&1
+}
+
+run_native_graph_closure_candidate() {
+  local result="${OUT_DIR}/decode_correctness_7p2_b8_p128_native_graph.jsonl"
+  local probe="${OUT_DIR}/decode_correctness_7p2_b8_p128_native_graph.pt"
+  local log="${OUT_DIR}/logs/decode_correctness_7p2_b8_p128_native_graph.log"
+  env -i "${COMMON_ENV[@]}" \
+    "RWKV7_FAST_TOKEN_BACKEND=native_graph" "RWKV7_NATIVE_MODEL_BACKEND=native_graph" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION=0" \
+    "RWKV7_NATIVE_GRAPH_RKV_POLICY=vkwr_auto" \
+    "RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS=8" \
+    "RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA=0" \
+    "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=0" "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G=0" \
+    "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN=0" \
+    "${PYTHON_BIN}" "${ROOT}/bench/bench_cross_model_speed_resident.py" \
+      --model "${RWKV_72_MODEL}" --model-kind rwkv --model-role candidate \
+      --model-pair rwkv-7.2b__qwen3.5-9b --model-size-label 7.2b \
+      --benchmark-matrix "${CORRECTNESS_PROTOCOL}" --optimization-lane native_graph_closure \
+      --dtype fp16 --quantization none --device cuda --cells 8x128x128 \
+      --prefill-chunk-size 512 --warmup 3 --runs 7 --rwkv-attn-mode fused_recurrent \
+      --rwkv-code-source repo --rwkv-implementation auto \
+      --probe-output "${probe}" --probe-cell 8x128x128 \
+      --probe-tokens 512 --probe-batch-size 8 --fail-fast --results "${result}" \
+      > "${log}" 2>&1
+}
+
 for spec in \
   "0p4|rwkv-0.4b__qwen3.5-0.8b|0.4b|${RWKV_04_MODEL}" \
   "1p5|rwkv-1.5b__qwen3.5-2b|1.5b|${RWKV_15_MODEL}" \
@@ -218,6 +275,16 @@ for spec in \
       --output "${OUT_DIR}/decode_correctness_${tag}_b${batch}_compare.json" --fail-on-gate
   done
 done
+
+run_native_eager_closure_reference
+run_native_graph_closure_candidate
+env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" "${ROOT}/bench/compare_rwkv_prefill_probe.py" \
+  --reference-probe "${OUT_DIR}/decode_correctness_7p2_b8_p128_native_eager.pt" \
+  --native-probe "${OUT_DIR}/decode_correctness_7p2_b8_p128_native_graph.pt" \
+  --min-cosine 0.9999 --required-batch-size 8 --required-probe-tokens 512 \
+  --require-distinct-batch-prompts \
+  --output "${OUT_DIR}/decode_correctness_7p2_b8_p128_native_eager_compare.json" \
+  --fail-on-gate
 
 env -i "${COMMON_ENV[@]}" "${PYTHON_BIN}" - "${OUT_DIR}" "${CANDIDATE}" "${CANDIDATE_SHA}" "${CORRECTNESS_MANIFEST}" "${ROUTE_MANIFEST}" "${MODEL_HASHES}" "${RUNTIME_LOCK}" "${SYSTEM_CSV}" "${REPOSITORY_COMMIT}" "${CACHE_ROOT}" <<'PY'
 import hashlib, json, os, sys
@@ -242,11 +309,14 @@ for tag,pair,size in specs:
     fla_probe=out/f"decode_correctness_{tag}_b{batch}_fla.pt"
     comparison=out/f"decode_correctness_{tag}_b{batch}_compare.json"
     entries.append({"model_pair":pair,"model_size_label":size,"model_path":target[0]["model_id_or_path"],"batch_size":batch,"prompt_tokens":2048,"decode_tokens":512,"probe_tokens":512,"fla_reference":{"row":artifact(fla_row),"probe":artifact(fla_probe)},"native_candidate":{"row":artifact(native_row),"probe":artifact(native_probe),"source_lane":artifact(lane),"source_cell":{"batch_size":batch,"prompt_tokens":2048,"decode_tokens":512}},"comparison":artifact(comparison)})
-    lanes.append({"model_pair":pair,"batch_size":batch,"artifact":artifact(lane),"rows":6,"probe_cell":[batch,2048,512],"ada_wagv_lora_require_extension":False,"rkv_policy":"manual"})
+    closure_lane=tag=="7p2" and batch==8
+    rkv_policy="vkwr_auto" if closure_lane else "manual"
+    lanes.append({"model_pair":pair,"batch_size":batch,"artifact":artifact(lane),"rows":6,"probe_cell":[batch,2048,512],"ada_wagv_lora_require_extension":False,"rkv_policy":rkv_policy,"fused_norm_mix_num_warps":8 if closure_lane else 4,"fused_wavg_lora":False if closure_lane else True})
 candidate.write_text("".join(json.dumps(row)+"\n" for row in rows))
 candidate_digest=sha(candidate); sidecar.write_text(f"{candidate_digest}  {candidate.name}\n")
-correctness.write_text(json.dumps({"schema_version":1,"protocol":"rwkv_native_graph_fla_correctness_v100_v1","benchmark_repository_commit":commit,"model_hashes_sha256":sha(model_hashes),"runtime":artifact(runtime),"coverage":{"models":4,"batch_sizes":[1,8],"entries":8,"baseline_fresh_gpu_processes":8,"candidate_additional_gpu_processes":0,"candidate_formal_lane_processes":8,"prompt_tokens":2048,"decode_tokens":512,"probe_tokens":512},"reference_contract":{"rwkv_implementation":"wrapper_repo","RWKV7_FAST_TOKEN_BACKEND":"fla","RWKV7_NATIVE_MODEL_BACKEND":"eager","RWKV7_FAST_PREFILL":"0","RWKV7_NATIVE_PREFILL_GRAPH":"0","TORCHDYNAMO_DISABLE":"1","TORCH_COMPILE_DISABLE":"1","performance_role":False},"gates":{"greedy_tokens":"exact_all_512","prompt_logits_min_row_cosine":0.9999,"final_logits_min_row_cosine":0.9999,"decode_logits_all_finite":True,"b8_distinct_prompts":True},"entries":entries},indent=2)+"\n")
-routes.write_text(json.dumps({"schema_version":1,"protocol":"qwen35_v100_paired_pd_v1","benchmark_repository_commit":commit,"repository_clean_pre_and_post":True,"candidate_rows":48,"candidate_result":artifact(candidate),"candidate_sha256_sidecar":artifact(sidecar),"model_hash_contract":{"algorithm":"sha256","scope":"every recursive regular file","before":artifact(model_hashes)},"native_graph_fla_correctness_manifest":artifact(correctness),"runtime_lock":artifact(runtime),"pip_freeze":artifact(out/"pip-freeze.txt"),"system_identity":artifact(system),"forced_environment":{"CUDA_VISIBLE_DEVICES":"0","CUDA_DEVICE_ORDER":"PCI_BUS_ID","PYTHONPATH":os.environ["PYTHONPATH"],"PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True","TORCH_CUDA_ARCH_LIST":"7.0","CPATH":str(Path(os.environ["CPATH"]).resolve()),"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","TOKENIZERS_PARALLELISM":"false","RWKV7_FAST_TOKEN_BACKEND":"native_graph","RWKV7_NATIVE_MODEL_BACKEND":"native_graph","RWKV7_NATIVE_PREFILL_GRAPH":"unset_exact_card_policy","RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION":"0","RWKV7_NATIVE_GRAPH_RKV_POLICY":"manual","RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM":"0","RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G":"0","RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN":"0","CACHE_ROOT":cache_root},"lanes":lanes},indent=2)+"\n")
+closure={"model_pair":"rwkv-7.2b__qwen3.5-9b","model_size_label":"7.2b","model_path":str(Path(rows[-1]["model_id_or_path"]).resolve()),"batch_size":8,"prompt_tokens":128,"decode_tokens":128,"probe_tokens":512,"reference_contract":{"rwkv_implementation":"native_model","effective_backend":"eager","RWKV7_FAST_TOKEN_BACKEND":"module_call","RWKV7_NATIVE_MODEL_BACKEND":"eager","RWKV7_FAST_PREFILL":"0","RWKV7_NATIVE_PREFILL_GRAPH":"0"},"candidate_contract":{"rwkv_implementation":"native_model","effective_backend":"native_graph","rkv_policy":"vkwr_auto","state_dtype":"torch.float16","triton_fp16_state":True,"fused_norm_mix_num_warps":8,"fused_wavg_lora":False},"native_eager_reference":{"row":artifact(out/"decode_correctness_7p2_b8_p128_native_eager.jsonl"),"probe":artifact(out/"decode_correctness_7p2_b8_p128_native_eager.pt")},"native_graph_candidate":{"row":artifact(out/"decode_correctness_7p2_b8_p128_native_graph.jsonl"),"probe":artifact(out/"decode_correctness_7p2_b8_p128_native_graph.pt")},"comparison":artifact(out/"decode_correctness_7p2_b8_p128_native_eager_compare.json")}
+correctness.write_text(json.dumps({"schema_version":1,"protocol":"rwkv_native_graph_fla_correctness_v100_v1","benchmark_repository_commit":commit,"model_hashes_sha256":sha(model_hashes),"runtime":artifact(runtime),"coverage":{"models":4,"batch_sizes":[1,8],"entries":8,"baseline_fresh_gpu_processes":8,"candidate_additional_gpu_processes":1,"candidate_formal_lane_processes":8,"targeted_native_eager_fresh_gpu_processes":1,"prompt_tokens":2048,"decode_tokens":512,"probe_tokens":512,"targeted_closure_entries":1},"reference_contract":{"rwkv_implementation":"wrapper_repo","RWKV7_FAST_TOKEN_BACKEND":"fla","RWKV7_NATIVE_MODEL_BACKEND":"eager","RWKV7_FAST_PREFILL":"0","RWKV7_NATIVE_PREFILL_GRAPH":"0","TORCHDYNAMO_DISABLE":"1","TORCH_COMPILE_DISABLE":"1","performance_role":False},"gates":{"greedy_tokens":"exact_all_512","prompt_logits_min_row_cosine":0.9999,"final_logits_min_row_cosine":0.9999,"decode_logits_all_finite":True,"b8_distinct_prompts":True},"targeted_same_implementation_closure":closure,"entries":entries},indent=2)+"\n")
+routes.write_text(json.dumps({"schema_version":1,"protocol":"qwen35_v100_paired_pd_v1","benchmark_repository_commit":commit,"repository_clean_pre_and_post":True,"candidate_rows":48,"candidate_result":artifact(candidate),"candidate_sha256_sidecar":artifact(sidecar),"model_hash_contract":{"algorithm":"sha256","scope":"every recursive regular file","before":artifact(model_hashes)},"native_graph_fla_correctness_manifest":artifact(correctness),"runtime_lock":artifact(runtime),"pip_freeze":artifact(out/"pip-freeze.txt"),"system_identity":artifact(system),"forced_environment":{"CUDA_VISIBLE_DEVICES":"0","CUDA_DEVICE_ORDER":"PCI_BUS_ID","PYTHONPATH":os.environ["PYTHONPATH"],"PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True","TORCH_CUDA_ARCH_LIST":"7.0","CPATH":str(Path(os.environ["CPATH"]).resolve()),"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","TOKENIZERS_PARALLELISM":"false","RWKV7_FAST_TOKEN_BACKEND":"native_graph","RWKV7_NATIVE_MODEL_BACKEND":"native_graph","RWKV7_NATIVE_PREFILL_GRAPH":"unset_exact_card_policy","RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION":"0","RWKV7_NATIVE_GRAPH_RKV_POLICY":"per_lane_exact_v100_policy","RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS":"per_lane_exact_v100_policy","RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA":"per_lane_exact_v100_policy","RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM":"0","RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G":"0","RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN":"0","CACHE_ROOT":cache_root},"lanes":lanes},indent=2)+"\n")
 PY
 
 hash_models "${MODEL_HASHES_AFTER}"

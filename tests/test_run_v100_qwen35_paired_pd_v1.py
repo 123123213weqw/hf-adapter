@@ -31,6 +31,13 @@ def test_v100_rwkv_runner_covers_four_pairs_and_exact_routes() -> None:
     assert '"entries":8' in script
     assert "RWKV7_NATIVE_GRAPH_RKV_POLICY=${rkv_policy}" in script
     assert "local require_extension=0 rkv_policy=manual" in script
+    assert '"${tag}" == "7p2" && "${batch}" == "8"' in script
+    assert "rkv_policy=vkwr_auto" in script
+    assert "norm_mix_warps=8" in script
+    assert "RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS=${norm_mix_warps}" in script
+    assert "RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA=${fused_wavg_lora}" in script
+    assert "fused_wavg_lora=0" in script
+    assert '"RWKV7_NATIVE_GRAPH_RKV_POLICY":"per_lane_exact_v100_policy"' in script
     assert "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM=0" in script
     assert '--probe-tokens 512 --probe-batch-size "${batch}"' in script
     assert "rwkv_native_graph_fla_correctness_v100_v1" in script

@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 import math
+import pickle
 import statistics
 from collections import Counter
 from pathlib import Path
@@ -205,20 +206,33 @@ def _validate_candidate_row(
         errors.append(f"{row.get('_source', '<row>')}: unexpected B/P/D={shape!r}")
         return
     batch, prompt, decode = (int(value) for value in shape)
-    _require(row, "rwkv_native_graph_rkv_policy", "manual", errors)
-    small_fp16_state = pair in PAIRS[:2] and batch == 8
+    large_b8_closure = pair == PAIRS[3] and batch == 8
+    _require(
+        row,
+        "rwkv_native_graph_rkv_policy",
+        "vkwr_auto" if large_b8_closure else "manual",
+        errors,
+    )
+    _require(
+        row,
+        "rwkv_native_graph_fused_norm_mix_num_warps",
+        8 if large_b8_closure else 4,
+        errors,
+    )
+    fp16_state = batch == 8 and (pair in PAIRS[:2] or pair == PAIRS[3])
     _require(
         row,
         "rwkv_native_graph_state_dtype",
-        "torch.float16" if small_fp16_state else "torch.float32",
+        "torch.float16" if fp16_state else "torch.float32",
         errors,
     )
-    _require(row, "rwkv_native_graph_triton_fp16_state", small_fp16_state, errors)
+    _require(row, "rwkv_native_graph_triton_fp16_state", fp16_state, errors)
+    _require(row, "rwkv_native_graph_fp16_recurrent", False, errors)
 
     eligible_layers = list(range(1, layer_count))
     for route, enabled in (
         ("sm70_wagv_lora", batch == 1),
-        ("fused_wavg_lora", batch == 8),
+        ("fused_wavg_lora", batch == 8 and not large_b8_closure),
     ):
         layers = eligible_layers if enabled else []
         for suffix, expected in (
@@ -548,6 +562,217 @@ def _resolve_artifact(base: Path, record: Any, label: str, errors: list[str]) ->
     return path
 
 
+def _validate_targeted_same_implementation_closure(
+    doc: dict[str, Any],
+    path: Path,
+    candidate_by_key: dict[tuple[Any, Any, Any, Any], dict[str, Any]],
+    errors: list[str],
+) -> dict[str, Any]:
+    label = "targeted same-implementation closure"
+    error_count_before = len(errors)
+    closure = doc.get("targeted_same_implementation_closure")
+    if type(closure) is not dict:
+        errors.append(f"{label} must be an object")
+        return {"status": "fail"}
+    for field, expected in (
+        ("model_pair", PAIRS[3]),
+        ("model_size_label", "7.2b"),
+        ("batch_size", 8),
+        ("prompt_tokens", 128),
+        ("decode_tokens", 128),
+        ("probe_tokens", 512),
+    ):
+        if not _strict_equal(closure.get(field), expected):
+            errors.append(
+                f"{label}.{field}={closure.get(field)!r}, expected {expected!r}"
+            )
+    reference_contract = closure.get("reference_contract")
+    expected_reference_contract = {
+        "rwkv_implementation": "native_model",
+        "effective_backend": "eager",
+        "RWKV7_FAST_TOKEN_BACKEND": "module_call",
+        "RWKV7_NATIVE_MODEL_BACKEND": "eager",
+        "RWKV7_FAST_PREFILL": "0",
+        "RWKV7_NATIVE_PREFILL_GRAPH": "0",
+    }
+    if not _strict_equal(reference_contract, expected_reference_contract):
+        errors.append(f"{label} reference contract mismatch")
+    candidate_contract = closure.get("candidate_contract")
+    expected_candidate_contract = {
+        "rwkv_implementation": "native_model",
+        "effective_backend": "native_graph",
+        "rkv_policy": "vkwr_auto",
+        "state_dtype": "torch.float16",
+        "triton_fp16_state": True,
+        "fused_norm_mix_num_warps": 8,
+        "fused_wavg_lora": False,
+    }
+    if not _strict_equal(candidate_contract, expected_candidate_contract):
+        errors.append(f"{label} candidate contract mismatch")
+    reference = closure.get("native_eager_reference")
+    candidate = closure.get("native_graph_candidate")
+    if type(reference) is not dict or type(candidate) is not dict:
+        errors.append(f"{label} must contain native eager/graph artifacts")
+        return {"status": "fail"}
+    base = path.parent
+    reference_row_path = _resolve_artifact(
+        base, reference.get("row"), f"{label}.reference.row", errors
+    )
+    reference_probe_path = _resolve_artifact(
+        base, reference.get("probe"), f"{label}.reference.probe", errors
+    )
+    candidate_row_path = _resolve_artifact(
+        base, candidate.get("row"), f"{label}.candidate.row", errors
+    )
+    candidate_probe_path = _resolve_artifact(
+        base, candidate.get("probe"), f"{label}.candidate.probe", errors
+    )
+    comparison_path = _resolve_artifact(
+        base, closure.get("comparison"), f"{label}.comparison", errors
+    )
+    if not all(
+        item.is_file()
+        for item in (
+            reference_row_path,
+            reference_probe_path,
+            candidate_row_path,
+            candidate_probe_path,
+            comparison_path,
+        )
+    ):
+        return {"status": "fail"}
+    try:
+        reference_rows = _read_jsonl_bytes(
+            reference_row_path.read_bytes(), reference_row_path
+        )
+        candidate_rows = _read_jsonl_bytes(
+            candidate_row_path.read_bytes(), candidate_row_path
+        )
+        reference_probe = torch.load(
+            reference_probe_path, map_location="cpu", weights_only=True
+        )
+        candidate_probe = torch.load(
+            candidate_probe_path, map_location="cpu", weights_only=True
+        )
+        recorded_comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        EOFError,
+        RuntimeError,
+        KeyError,
+        pickle.UnpicklingError,
+    ) as exc:
+        errors.append(f"{label} evidence could not be read: {exc}")
+        return {"status": "fail"}
+    if len(reference_rows) != 1 or len(candidate_rows) != 1:
+        errors.append(f"{label} row artifacts must contain exactly one row")
+        return {"status": "fail"}
+    reference_row = reference_rows[0]
+    candidate_row = candidate_rows[0]
+    formal_row = candidate_by_key.get((PAIRS[3], 8, 128, 128))
+    for field, expected in (
+        ("rwkv_implementation_requested", "auto"),
+        ("rwkv_implementation_effective", "native_model"),
+        ("rwkv_fast_token_backend_requested", "module_call"),
+        ("rwkv_native_model_backend_requested", "eager"),
+        ("effective_backend", "eager"),
+        ("step_backend", "rwkv_fast_token"),
+        ("cache_type", "NativeRWKV7Cache"),
+        ("batch_size", 8),
+        ("prompt_tokens", 128),
+        ("decode_tokens", 128),
+        ("warmup", 1),
+        ("runs", 1),
+        ("status", "pass"),
+        ("logits_finite", True),
+    ):
+        if not _strict_equal(reference_row.get(field), expected):
+            errors.append(
+                f"{label} reference {field}={reference_row.get(field)!r}, expected {expected!r}"
+            )
+    for field, expected in (
+        ("rwkv_implementation_requested", "auto"),
+        ("rwkv_implementation_effective", "native_model"),
+        ("rwkv_fast_token_backend_requested", "native_graph"),
+        ("rwkv_native_model_backend_requested", "native_graph"),
+        ("effective_backend", "native_graph"),
+        ("step_backend", "rwkv_fast_token"),
+        ("cache_type", "NativeRWKV7Cache"),
+        ("batch_size", 8),
+        ("prompt_tokens", 128),
+        ("decode_tokens", 128),
+        ("warmup", 3),
+        ("runs", 7),
+        ("status", "pass"),
+        ("logits_finite", True),
+        ("rwkv_native_graph_rkv_policy", "vkwr_auto"),
+        ("rwkv_native_graph_fused_norm_mix_num_warps", 8),
+        ("rwkv_native_graph_state_dtype", "torch.float16"),
+        ("rwkv_native_graph_triton_fp16_state", True),
+        ("rwkv_native_graph_fp16_recurrent", False),
+        ("rwkv_native_graph_fused_wavg_lora_selected", False),
+        ("rwkv_native_graph_fused_wavg_lora_effective", False),
+    ):
+        if not _strict_equal(candidate_row.get(field), expected):
+            errors.append(
+                f"{label} candidate {field}={candidate_row.get(field)!r}, expected {expected!r}"
+            )
+    model_path = closure.get("model_path")
+    if type(model_path) is not str or not model_path:
+        errors.append(f"{label} model_path must be non-empty")
+    for row_name, row in (
+        ("reference", reference_row),
+        ("candidate", candidate_row),
+        ("formal", formal_row),
+    ):
+        if type(row) is not dict or row.get("model_id_or_path") != model_path:
+            errors.append(f"{label} {row_name} model path mismatch")
+    if type(formal_row) is dict:
+        for field, value in formal_row.items():
+            if field.startswith("rwkv_native_graph_") and not _strict_equal(
+                candidate_row.get(field), value
+            ):
+                errors.append(f"{label} route differs from formal row at {field}")
+        for field in RUNTIME_FIELDS:
+            if not _strict_equal(candidate_row.get(field), formal_row.get(field)):
+                errors.append(f"{label} runtime differs from formal row at {field}")
+    if type(reference_probe) is not dict or type(candidate_probe) is not dict:
+        errors.append(f"{label} probe payloads must be dictionaries")
+        return {"status": "fail"}
+    recomputed = compare_rwkv_probes(reference_probe, candidate_probe, 0.9999)
+    contract_errors: list[str] = []
+    if recomputed.get("probe_batch_size") != 8:
+        contract_errors.append("probe batch size mismatch")
+    if recomputed.get("probe_tokens") != 512:
+        contract_errors.append("probe token count mismatch")
+    if recomputed.get("distinct_batch_prompts") is not True:
+        contract_errors.append("B8 prompts are not distinct")
+    recomputed["contract_errors"] = contract_errors
+    if contract_errors:
+        recomputed["status"] = "fail"
+    if recorded_comparison != recomputed:
+        errors.append(f"{label} recorded comparison does not match recomputation")
+    if recomputed.get("status") != "pass":
+        errors.append(f"{label} comparison failed")
+    closure_pass = (
+        recomputed.get("status") == "pass" and len(errors) == error_count_before
+    )
+    return {
+        "status": "pass" if closure_pass else "fail",
+        "prompt_logits_cosine": recomputed.get("prompt_logits_cosine"),
+        "final_logits_cosine": recomputed.get("final_logits_cosine"),
+        "greedy_tokens_match": recomputed.get("greedy_tokens_match"),
+        "reference_decode_logits_all_finite": recomputed.get(
+            "reference_decode_logits_all_finite"
+        ),
+        "candidate_decode_logits_all_finite": recomputed.get(
+            "native_decode_logits_all_finite"
+        ),
+    }
+
+
 def validate_correctness_manifest(
     path: Path, candidate_rows: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -576,11 +801,13 @@ def validate_correctness_manifest(
         "batch_sizes": [1, 8],
         "entries": 8,
         "baseline_fresh_gpu_processes": 8,
-        "candidate_additional_gpu_processes": 0,
+        "candidate_additional_gpu_processes": 1,
         "candidate_formal_lane_processes": 8,
+        "targeted_native_eager_fresh_gpu_processes": 1,
         "prompt_tokens": 2048,
         "decode_tokens": 512,
         "probe_tokens": 512,
+        "targeted_closure_entries": 1,
     }
     if not _strict_equal(coverage, expected_coverage):
         errors.append(
@@ -743,11 +970,15 @@ def validate_correctness_manifest(
         errors.append(
             f"correctness keys={sorted(seen_keys, key=repr)!r}, expected all 8 pair/batch keys"
         )
+    closure_metrics = _validate_targeted_same_implementation_closure(
+        doc, path, candidate_by_key, errors
+    )
     return {
         "status": "pass" if not errors else "fail",
         "entries": len(entries),
         "minimum_prompt_logits_cosine": min(prompt_cosines) if prompt_cosines else None,
         "minimum_final_logits_cosine": min(final_cosines) if final_cosines else None,
+        "targeted_same_implementation_closure": closure_metrics,
         "errors": errors,
     }
 
@@ -855,7 +1086,9 @@ def validate_provenance(
         "RWKV7_NATIVE_MODEL_BACKEND": "native_graph",
         "RWKV7_NATIVE_PREFILL_GRAPH": "unset_exact_card_policy",
         "RWKV7_NATIVE_GRAPH_ADA_WAGV_LORA_REQUIRE_EXTENSION": "0",
-        "RWKV7_NATIVE_GRAPH_RKV_POLICY": "manual",
+        "RWKV7_NATIVE_GRAPH_RKV_POLICY": "per_lane_exact_v100_policy",
+        "RWKV7_NATIVE_GRAPH_FUSED_NORM_MIX_NUM_WARPS": "per_lane_exact_v100_policy",
+        "RWKV7_NATIVE_GRAPH_FUSED_WAVG_LORA": "per_lane_exact_v100_policy",
         "RWKV7_NATIVE_GRAPH_ADA_WAGV_BMM": "0",
         "RWKV7_NATIVE_GRAPH_SM120_WAGV_BMM_G": "0",
         "RWKV7_NATIVE_GRAPH_SM120_COMPILED_FFN": "0",
@@ -871,6 +1104,66 @@ def validate_provenance(
             errors.append(
                 "candidate PYTHONPATH must bind repository, Triton, and FLA roots"
             )
+    lanes = route.get("lanes")
+    if type(lanes) is not list:
+        errors.append("candidate lanes must be a list")
+        lanes = []
+    expected_lane_keys = {(pair, batch) for pair in PAIRS for batch in (1, 8)}
+    seen_lane_keys: set[tuple[Any, Any]] = set()
+    candidate_by_key = {_cell_key(row): row for row in candidate_rows}
+    for index, lane in enumerate(lanes):
+        label = f"candidate lane {index}"
+        if type(lane) is not dict:
+            errors.append(f"{label} must be an object")
+            continue
+        pair = lane.get("model_pair")
+        batch = lane.get("batch_size")
+        key = (pair, batch)
+        if key in seen_lane_keys:
+            errors.append(f"duplicate {label} key {key!r}")
+        seen_lane_keys.add(key)
+        if key not in expected_lane_keys:
+            errors.append(f"unexpected {label} key {key!r}")
+            continue
+        closure_lane = pair == PAIRS[3] and batch == 8
+        for field, expected in (
+            ("rows", 6),
+            ("probe_cell", [batch, 2048, 512]),
+            ("ada_wagv_lora_require_extension", False),
+            ("rkv_policy", "vkwr_auto" if closure_lane else "manual"),
+            ("fused_norm_mix_num_warps", 8 if closure_lane else 4),
+            ("fused_wavg_lora", not closure_lane),
+        ):
+            if not _strict_equal(lane.get(field), expected):
+                errors.append(f"{label} {field} mismatch")
+        lane_path = _resolve_artifact(
+            base, lane.get("artifact"), f"{label} artifact", errors
+        )
+        if lane_path.is_file():
+            try:
+                lane_rows = _read_jsonl_bytes(lane_path.read_bytes(), lane_path)
+            except (OSError, UnicodeError, ValueError) as exc:
+                errors.append(f"{label} could not be read: {exc}")
+                lane_rows = []
+            expected_rows = [
+                candidate_by_key.get((pair, batch, prompt, decode))
+                for prompt in (128, 512, 2048)
+                for decode in (128, 512)
+            ]
+            normalized_lane_rows = [
+                {name: value for name, value in row.items() if not name.startswith("_")}
+                for row in lane_rows
+            ]
+            normalized_expected_rows = [
+                {name: value for name, value in row.items() if not name.startswith("_")}
+                if type(row) is dict
+                else None
+                for row in expected_rows
+            ]
+            if normalized_lane_rows != normalized_expected_rows:
+                errors.append(f"{label} rows differ from candidate matrix")
+    if seen_lane_keys != expected_lane_keys:
+        errors.append("candidate lane coverage must contain all four pairs and B1/B8")
     system_path = _resolve_artifact(
         base, route.get("system_identity"), "system_identity", errors
     )
