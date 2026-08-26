@@ -1,0 +1,39 @@
+{
+  "checks": {
+    "auto_model_loaded": true,
+    "beam_generation": true,
+    "cached_decode": true,
+    "finite": true,
+    "finite_gradients": true,
+    "nonzero_gradient": true,
+    "optimized_inference": true,
+    "save_reload_equal": true,
+    "training_reference_fallback": true
+  },
+  "code_sha": "530d935b9b95d5ec4f09d04eb164a38c8669a1ec",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "12.4",
+    "device": "NVIDIA GeForce RTX 4090",
+    "dynamic_module": "transformers_modules.rwkv7_01b_hf.modeling_rwkv7",
+    "platform": "Linux-5.15.0-128-generic-x86_64-with-glibc2.35",
+    "python": "3.12.8 | packaged by conda-forge | (main, Dec  5 2024, 14:24:40) [GCC 13.3.0]",
+    "torch": "2.5.1+cu124"
+  },
+  "inference_route": {
+    "implementation": "torch-cuda-graph-reference-v1",
+    "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+    "requested": "auto",
+    "selected": "optimized"
+  },
+  "model": "/home/ubuntu/codex-run/models/rwkv7-0.1b-hf",
+  "passed": true,
+  "schema": "rwkv7-native-backend-hf-ecosystem-smoke-v1",
+  "seed": 42,
+  "training_route": {
+    "implementation": "torch",
+    "reason": "the optimized recurrent protocol v1 is inference-only during training",
+    "requested": "auto",
+    "selected": "reference"
+  }
+}

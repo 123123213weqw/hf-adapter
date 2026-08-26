@@ -10,6 +10,10 @@
   FP32, CPU, unsupported shapes, missing packages, and protocol mismatches.
 - Added operator/model/cache/padding/teacher-decode/greedy/training validation
   bundles and paired reference-versus-auto speed measurement.
+- Kept re-entrant gradient-checkpointing passes on the reference backend by
+  propagating the model's semantic training mode instead of inferring it from
+  `torch.is_grad_enabled()`; also made CUDA graph replay safe for inference
+  tensors on PyTorch 2.5.
 - Applied `logits_to_keep` before the vocabulary projection in label-free
   inference, matching the current Mamba-style HF contract.
 

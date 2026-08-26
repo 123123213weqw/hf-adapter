@@ -1,0 +1,548 @@
+{
+  "code_sha": "530d935b9b95d5ec4f09d04eb164a38c8669a1ec",
+  "dtype": "bf16",
+  "environment": {
+    "cuda": "12.4",
+    "device": "NVIDIA GeForce RTX 4090",
+    "kernel_bridge": {
+      "api_version": 1,
+      "last_route": null,
+      "mode": "auto",
+      "package_available": true,
+      "package_error": null
+    },
+    "platform": "Linux-5.15.0-128-generic-x86_64-with-glibc2.35",
+    "python": "3.12.8 | packaged by conda-forge | (main, Dec  5 2024, 14:24:40) [GCC 13.3.0]",
+    "torch": "2.5.1+cu124"
+  },
+  "expected_route": "reference",
+  "models": {
+    "0.1b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999999403953552,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch",
+          "reason": "unsupported input dtype torch.bfloat16",
+          "requested": "auto",
+          "selected": "reference"
+        },
+        "teacher_forced_logits": {
+          "cosine": 1.000000238418579,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 0.9999998807907104,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 0.9999998807907104,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        }
+      ],
+      "config_sha256": "a62082ea59f4ed55eb5a7939a56ede61436489409d5675a3a4ac8cd14e179e5c",
+      "passed": true,
+      "path": "/home/ubuntu/codex-run/models/rwkv7-0.1b-hf"
+    },
+    "0.4b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999998807907104,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch",
+          "reason": "unsupported input dtype torch.bfloat16",
+          "requested": "auto",
+          "selected": "reference"
+        },
+        "teacher_forced_logits": {
+          "cosine": 0.9999998807907104,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998211860657
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 0.9999999403953552,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        }
+      ],
+      "config_sha256": "46576c394621e41729847be5a9c58a613447e62a3004fe7560d3df1f699606a2",
+      "passed": true,
+      "path": "/home/ubuntu/codex-run/models/rwkv7-0.4b-hf"
+    },
+    "1.5b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999998807907104,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch",
+          "reason": "unsupported input dtype torch.bfloat16",
+          "requested": "auto",
+          "selected": "reference"
+        },
+        "teacher_forced_logits": {
+          "cosine": 1.0,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 0.9999999403953552,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999997615814209
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 0.9999998807907104,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch",
+            "reason": "unsupported input dtype torch.bfloat16",
+            "requested": "auto",
+            "selected": "reference"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        }
+      ],
+      "config_sha256": "a325f5a904c59b1ad06315c97361a0b7d298291ef8f97251dc71f4237444e399",
+      "passed": true,
+      "path": "/home/ubuntu/codex-run/models/rwkv7-1.5b-hf"
+    }
+  },
+  "operator": [
+    {
+      "batch": 1,
+      "length": 1,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 1,
+      "length": 17,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 0.9999999403953552,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 1,
+      "length": 128,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 0.9999999403953552,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 1,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 0.9999998807907104,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 17,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 1.000000238418579,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 128,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch",
+        "reason": "unsupported input dtype torch.bfloat16",
+        "requested": "auto",
+        "selected": "reference"
+      },
+      "state": {
+        "cosine": 0.9999998807907104,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    }
+  ],
+  "passed": true,
+  "schema": "rwkv7-native-backend-validation-v1",
+  "seed": 42
+}
