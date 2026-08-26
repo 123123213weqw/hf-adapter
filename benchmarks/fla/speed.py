@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark the reference RWKV-7 path against a pinned FLA checkout.
+"""Benchmark the RWKV-7 HF paths against a pinned FLA checkout.
 
 This is a throughput diagnostic rather than a correctness gate.  Both
 backends load the same Hugging Face weights, use the same inputs and run
@@ -34,6 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--decode-tokens", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--code-sha", default=None)
+    parser.add_argument(
+        "--include-optimized",
+        action="store_true",
+        help="Also benchmark the installed rwkv7_kernels backend",
+    )
     return parser.parse_args()
 
 
@@ -72,7 +78,14 @@ def measure(function, *, warmup: int, repeats: int) -> dict:
     }
 
 
-def model_cases(model, *, warmup: int, repeats: int, decode_tokens: int) -> dict:
+def model_cases(
+    model,
+    *,
+    warmup: int,
+    repeats: int,
+    decode_tokens: int,
+    route_kind: str | None = None,
+) -> dict:
     device = torch.device("cuda")
     generator = torch.Generator(device=device).manual_seed(42)
     rows = {}
@@ -83,6 +96,10 @@ def model_cases(model, *, warmup: int, repeats: int, decode_tokens: int) -> dict
             return model(input_ids=ids, use_cache=False).logits
 
         result = measure(forward_no_cache, warmup=warmup, repeats=repeats)
+        if route_kind is not None:
+            from rwkv7_hf.kernel_bridge import last_backend_route
+
+            result["route"] = last_backend_route()
         result["tokens_per_second"] = batch * length / (result["median_ms"] / 1000.0)
         rows[f"prefill_no_cache_b{batch}_t{length}"] = result
 
@@ -114,6 +131,10 @@ def model_cases(model, *, warmup: int, repeats: int, decode_tokens: int) -> dict
             return last.logits
 
         result = measure(decode_sequence, warmup=1, repeats=max(3, repeats // 2))
+        if route_kind is not None:
+            from rwkv7_hf.kernel_bridge import last_backend_route
+
+            result["route"] = last_backend_route()
         result["milliseconds_per_token_step"] = result["median_ms"] / decode_tokens
         result["tokens_per_second"] = (
             batch * decode_tokens / (result["median_ms"] / 1000.0)
@@ -123,7 +144,7 @@ def model_cases(model, *, warmup: int, repeats: int, decode_tokens: int) -> dict
 
 
 def operator_cases(kind: str, dtype: torch.dtype, *, warmup: int, repeats: int) -> dict:
-    if kind == "reference":
+    if kind in ("reference", "optimized"):
         from rwkv7_hf.ops_rwkv7 import rwkv7_recurrent
 
         def invoke(values):
@@ -135,6 +156,7 @@ def operator_cases(kind: str, dtype: torch.dtype, *, warmup: int, repeats: int) 
                 values["a"],
                 values["b"],
                 values["state"],
+                backend=kind,
             )
     else:
         from fla.ops.rwkv7 import chunk_rwkv7
@@ -162,10 +184,17 @@ def operator_cases(kind: str, dtype: torch.dtype, *, warmup: int, repeats: int) 
         }
         values["w"] = -(values["w"].abs() + 0.1)
         values["state"] = torch.randn(
-            (batch, 2, 64, 64), generator=generator, device=device, dtype=dtype
+            (batch, 2, 64, 64),
+            generator=generator,
+            device=device,
+            dtype=torch.float32,
         ) * 0.01
 
         result = measure(lambda: invoke(values), warmup=warmup, repeats=repeats)
+        if kind in ("reference", "optimized"):
+            from rwkv7_hf.kernel_bridge import last_backend_route
+
+            result["route"] = last_backend_route()
         result["tokens_per_second"] = batch * length / (result["median_ms"] / 1000.0)
         rows[f"wkv_b{batch}_t{length}"] = result
         del values
@@ -173,7 +202,7 @@ def operator_cases(kind: str, dtype: torch.dtype, *, warmup: int, repeats: int) 
 
 
 def load_model(kind: str, model_path: Path, dtype: torch.dtype):
-    if kind == "reference":
+    if kind in ("reference", "optimized"):
         from rwkv7_hf.configuration_rwkv7 import RWKV7Config
         from rwkv7_hf.modeling_rwkv7 import RWKV7ForCausalLM
     else:
@@ -192,6 +221,19 @@ def add_speedups(report: dict) -> None:
         for name in reference.keys() & fla.keys():
             fla[name]["speedup_vs_reference"] = (
                 reference[name]["median_ms"] / fla[name]["median_ms"]
+            )
+        if "optimized" not in report["backends"]:
+            continue
+        optimized = report["backends"]["optimized"][section]
+        for name in reference.keys() & fla.keys() & optimized.keys():
+            optimized[name]["speedup_vs_reference"] = (
+                reference[name]["median_ms"] / optimized[name]["median_ms"]
+            )
+            optimized[name]["speedup_vs_fla"] = (
+                fla[name]["median_ms"] / optimized[name]["median_ms"]
+            )
+            fla[name]["speedup_vs_optimized"] = (
+                optimized[name]["median_ms"] / fla[name]["median_ms"]
             )
 
 
@@ -212,6 +254,7 @@ def main() -> None:
         "purpose": "non-blocking throughput diagnostic",
         "model": str(args.model.resolve()),
         "dtype": args.dtype,
+        "code_sha": args.code_sha,
         "fla_commit": commit,
         "environment": {
             "python": platform.python_version(),
@@ -230,18 +273,35 @@ def main() -> None:
         },
         "backends": {},
     }
-    for kind in ("reference", "fla"):
+    kinds = (
+        ("reference", "optimized", "fla")
+        if args.include_optimized
+        else ("reference", "fla")
+    )
+    for kind in kinds:
         started = time.perf_counter()
         operator = operator_cases(
             kind, dtype, warmup=args.warmup, repeats=args.repeats
         )
         model = load_model(kind, args.model, dtype)
-        model_rows = model_cases(
-            model,
-            warmup=args.warmup,
-            repeats=args.repeats,
-            decode_tokens=args.decode_tokens,
-        )
+        if kind in ("reference", "optimized"):
+            from rwkv7_hf.kernel_bridge import use_rwkv7_backend
+
+            with use_rwkv7_backend(kind):
+                model_rows = model_cases(
+                    model,
+                    warmup=args.warmup,
+                    repeats=args.repeats,
+                    decode_tokens=args.decode_tokens,
+                    route_kind=kind,
+                )
+        else:
+            model_rows = model_cases(
+                model,
+                warmup=args.warmup,
+                repeats=args.repeats,
+                decode_tokens=args.decode_tokens,
+            )
         report["backends"][kind] = {
             "operator": operator,
             "model": model_rows,

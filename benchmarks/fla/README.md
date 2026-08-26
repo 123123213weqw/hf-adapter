@@ -21,3 +21,21 @@ The reproducible speed harness is `speed.py`. The first pinned RTX 4080
 throughput bundle is archived under `results/4080-speed-20260826/`; it reports
 operator, prefill and cached-decode latency without CUDA graphs or
 `torch.compile`.
+
+When the optional `rwkv7-kernels` wheel is installed, add
+`--include-optimized` to create one synchronized three-way bundle containing
+the readable reference path, the versioned optimized backend, and pinned FLA:
+
+```bash
+python benchmarks/fla/speed.py \
+  --model /models/rwkv7-g1d-0.4b-hf \
+  --fla-source /src/flash-linear-attention \
+  --output /results/fla/optimized-vs-fla.json \
+  --dtype fp16 \
+  --include-optimized \
+  --code-sha "$(git rev-parse HEAD)"
+```
+
+The report records both optimized-vs-reference and optimized-vs-FLA ratios.
+The flag remains explicit so the reference line works without the companion
+package.

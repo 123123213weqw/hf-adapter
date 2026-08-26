@@ -10,6 +10,7 @@ FLA_BENCHMARK = Path(__file__).resolve().parents[1] / "benchmarks" / "fla"
 sys.path.insert(0, str(FLA_BENCHMARK))
 
 from compare import metrics, state_metrics, thresholds  # noqa: E402
+from speed import add_speedups  # noqa: E402
 
 
 def test_low_precision_thresholds_match_release_contract():
@@ -51,3 +52,28 @@ def test_cosine_is_numerically_bounded():
     value = torch.linspace(-10, 10, 1_000_000)
     row = metrics(value, value.clone())
     assert 0.999999999 <= row["cosine"] <= 1.0
+
+
+def test_three_way_speed_report_records_optimized_vs_fla():
+    report = {
+        "backends": {
+            "reference": {
+                "operator": {"case": {"median_ms": 12.0}},
+                "model": {"case": {"median_ms": 30.0}},
+            },
+            "optimized": {
+                "operator": {"case": {"median_ms": 3.0}},
+                "model": {"case": {"median_ms": 10.0}},
+            },
+            "fla": {
+                "operator": {"case": {"median_ms": 2.0}},
+                "model": {"case": {"median_ms": 5.0}},
+            },
+        }
+    }
+    add_speedups(report)
+    optimized = report["backends"]["optimized"]
+    fla = report["backends"]["fla"]
+    assert optimized["operator"]["case"]["speedup_vs_reference"] == 4.0
+    assert optimized["operator"]["case"]["speedup_vs_fla"] == 2.0 / 3.0
+    assert fla["model"]["case"]["speedup_vs_optimized"] == 2.0
