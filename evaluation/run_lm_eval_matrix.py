@@ -12,6 +12,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from .common import canonical_task_config, task_dataset_fingerprint
+except ImportError:  # direct script execution
+    from common import canonical_task_config, task_dataset_fingerprint
+
 
 EXPECTED_LM_EVAL = "0.4.9.1"
 TASKS = (
@@ -258,21 +263,16 @@ def task_provenance(unit_dir: Path, task: str) -> dict:
         "dataset_revision": config.get("dataset_kwargs", {}).get("revision"),
         "sample_count": sample_count,
         "sample_hash_fingerprint": sample_hash_fingerprint,
+        "dataset_task_config": canonical_task_config(config),
     }
     # lm_eval's task config plus its document hashes are the stable dataset-input
     # fingerprint.  Hash them explicitly instead of depending on a private
     # datasets cache fingerprint that can vary across Arrow versions.
-    canonical = json.dumps(
-        {
-            "task_config": config,
-            "sample_count": sample_count,
-            "sample_hash_fingerprint": sample_hash_fingerprint,
-        },
-        sort_keys=True,
-        ensure_ascii=False,
-        default=str,
-    ).encode()
-    provenance["dataset_fingerprint"] = hashlib.sha256(canonical).hexdigest()
+    provenance["dataset_fingerprint"] = task_dataset_fingerprint(
+        config,
+        sample_count,
+        sample_hash_fingerprint,
+    )
     return provenance
 
 

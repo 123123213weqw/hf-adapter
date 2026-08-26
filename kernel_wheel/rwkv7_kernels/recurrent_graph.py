@@ -25,37 +25,56 @@ def _reference_recurrent(
     attention_mask,
 ):
     batch, time = receptance.shape[:2]
-    state = initial_state
-    outputs = []
-    for token in range(time):
-        r_t = receptance[:, token]
-        w_t = decay[:, token].to(dtype=state.dtype)
-        k_t = key[:, token]
-        v_t = value[:, token]
-        a_t = a[:, token]
-        b_t = b[:, token]
-        state_vk = state.transpose(-1, -2)
-        ab = a_t.unsqueeze(-1) @ b_t.unsqueeze(-2)
-        vk = v_t.unsqueeze(-1) @ k_t.unsqueeze(-2)
-        candidate_vk = (
-            state_vk * w_t.unsqueeze(-2)
-            + state_vk @ ab.to(dtype=state.dtype)
-            + vk.to(dtype=state.dtype)
+    # Keep the same per-sample arithmetic contract as the public reference
+    # operator. Batched matmul is mathematically equivalent, but FP16 CUDA
+    # kernels may choose a different accumulation strategy for B=1 and B=8;
+    # that is enough to flip close lm_eval choices. CUDA Graph capture removes
+    # launch overhead without changing this batch-invariant execution rule.
+    def run_sample(batch_index):
+        state = initial_state[batch_index : batch_index + 1]
+        sample_mask = (
+            None
+            if attention_mask is None
+            else attention_mask[batch_index : batch_index + 1]
         )
-        candidate = candidate_vk.transpose(-1, -2)
-        output = (
-            candidate_vk.to(dtype=r_t.dtype) @ r_t.unsqueeze(-1)
-        ).squeeze(-1)
-        if attention_mask is not None:
-            active = attention_mask[:, token]
-            state = torch.where(active.view(batch, 1, 1, 1), candidate, state)
-            output = torch.where(
-                active.view(batch, 1, 1), output, torch.zeros_like(output)
+        outputs = []
+        for token in range(time):
+            r_t = receptance[batch_index : batch_index + 1, token]
+            w_t = decay[batch_index : batch_index + 1, token].to(
+                dtype=state.dtype
             )
-        else:
-            state = candidate
-        outputs.append(output.to(dtype=value.dtype))
-    return torch.stack(outputs, dim=1), state
+            k_t = key[batch_index : batch_index + 1, token]
+            v_t = value[batch_index : batch_index + 1, token]
+            a_t = a[batch_index : batch_index + 1, token]
+            b_t = b[batch_index : batch_index + 1, token]
+            state_vk = state.transpose(-1, -2)
+            ab = a_t.unsqueeze(-1) @ b_t.unsqueeze(-2)
+            vk = v_t.unsqueeze(-1) @ k_t.unsqueeze(-2)
+            candidate_vk = (
+                state_vk * w_t.unsqueeze(-2)
+                + state_vk @ ab.to(dtype=state.dtype)
+                + vk.to(dtype=state.dtype)
+            )
+            candidate = candidate_vk.transpose(-1, -2)
+            output = (
+                candidate_vk.to(dtype=r_t.dtype) @ r_t.unsqueeze(-1)
+            ).squeeze(-1)
+            if sample_mask is not None:
+                active = sample_mask[:, token]
+                state = torch.where(active.view(1, 1, 1, 1), candidate, state)
+                output = torch.where(
+                    active.view(1, 1, 1), output, torch.zeros_like(output)
+                )
+            else:
+                state = candidate
+            outputs.append(output.to(dtype=value.dtype))
+        return torch.stack(outputs, dim=1), state
+
+    samples = [run_sample(batch_index) for batch_index in range(batch)]
+    return (
+        torch.cat([sample[0] for sample in samples], dim=0),
+        torch.cat([sample[1] for sample in samples], dim=0),
+    )
 
 
 def _empty_like(value: torch.Tensor) -> torch.Tensor:

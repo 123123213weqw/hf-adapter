@@ -29,7 +29,8 @@ def numeric_metrics(result: dict, task: str) -> dict[str, float]:
     return {
         key: float(value)
         for key, value in row.items()
-        if isinstance(value, (int, float)) and not key.endswith("_stderr")
+        if isinstance(value, (int, float))
+        and not key.split(",", 1)[0].endswith("_stderr")
     }
 
 

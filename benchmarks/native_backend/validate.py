@@ -210,6 +210,45 @@ def model_case(
     }
 
 
+def batch_regrouping(
+    model,
+    *,
+    dtype_name: str,
+    device: torch.device,
+    vocab_size: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Require the optimized route to preserve lm_eval batch semantics."""
+
+    generator = torch.Generator(device=device).manual_seed(seed + 70_000)
+    sample = torch.randint(
+        1, vocab_size, (1, 17), generator=generator, device=device
+    )
+    grouped = torch.randint(
+        1, vocab_size, (8, 31), generator=generator, device=device
+    )
+    grouped[5, : sample.shape[1]] = sample[0]
+    grouped[5, sample.shape[1] :] = 0
+
+    reset_kernel_discovery_for_tests()
+    with torch.inference_mode(), use_rwkv7_backend("auto"):
+        isolated = model(input_ids=sample, use_cache=False).logits
+        grouped_logits = model(input_ids=grouped, use_cache=False).logits[
+            5:6, : sample.shape[1]
+        ]
+    route = last_backend_route()
+    exact = bool(torch.equal(grouped_logits, isolated))
+    return {
+        "isolated_batch": 1,
+        "grouped_batch": 8,
+        "prefix_tokens": int(sample.shape[1]),
+        "logits": metrics(grouped_logits, isolated),
+        "exact": exact,
+        "route": route,
+        "passed": bool(exact and route_passed(route, dtype_name)),
+    }
+
+
 def cached_and_greedy(
     model,
     *,
@@ -354,12 +393,24 @@ def main() -> int:
             decode_tokens=args.decode_tokens,
             seed=args.seed + model_index,
         )
+        regrouping = batch_regrouping(
+            model,
+            dtype_name=args.dtype,
+            device=device,
+            vocab_size=vocab_size,
+            seed=args.seed + model_index,
+        )
         bundle["models"][label] = {
             "path": str(path),
             "config_sha256": sha256(path / "config.json"),
             "cases": rows,
             "cached_and_greedy": generation,
-            "passed": bool(all(row["passed"] for row in rows) and generation["passed"]),
+            "batch_regrouping": regrouping,
+            "passed": bool(
+                all(row["passed"] for row in rows)
+                and generation["passed"]
+                and regrouping["passed"]
+            ),
         }
         del model
         if device.type == "cuda":

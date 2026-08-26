@@ -10,6 +10,56 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+_RUNTIME_TASK_METADATA = {
+    "backend",
+    "device",
+    "dtype",
+    "max_length",
+    "model",
+    "model_args",
+    "pretrained",
+    "revision",
+    "trust_remote_code",
+}
+
+
+def canonical_task_config(config: dict) -> dict:
+    """Remove model-runtime fields from an lm_eval dataset identity.
+
+    ``lm_eval`` writes HFLM arguments such as the absolute checkpoint path into
+    ``task_config.metadata``. They are useful execution provenance, but they do
+    not describe the task or its examples and must not make two hosts look like
+    different datasets.
+    """
+
+    canonical = json.loads(json.dumps(config, ensure_ascii=False, default=str))
+    metadata = canonical.get("metadata")
+    if isinstance(metadata, dict):
+        for key in _RUNTIME_TASK_METADATA:
+            metadata.pop(key, None)
+        if not metadata:
+            canonical.pop("metadata", None)
+    return canonical
+
+
+def task_dataset_fingerprint(
+    task_config: dict,
+    sample_count: int,
+    sample_hash_fingerprint: str,
+) -> str:
+    canonical = json.dumps(
+        {
+            "task_config": canonical_task_config(task_config),
+            "sample_count": int(sample_count),
+            "sample_hash_fingerprint": str(sample_hash_fingerprint),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def git_revision(root: Path) -> str | None:
     try:
         return subprocess.check_output(

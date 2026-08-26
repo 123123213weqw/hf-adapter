@@ -13,6 +13,11 @@ import math
 from pathlib import Path
 from typing import Any
 
+try:
+    from .common import task_dataset_fingerprint
+except ImportError:  # direct script execution
+    from common import task_dataset_fingerprint
+
 
 IGNORED_JSON_NAMES = {
     "environment.json",
@@ -70,8 +75,26 @@ def numeric_metrics(payload: dict[str, Any], task: str) -> dict[str, float]:
     return {
         key: float(value)
         for key, value in values.items()
-        if isinstance(value, (int, float)) and not key.endswith("_stderr")
+        if isinstance(value, (int, float))
+        and not key.split(",", 1)[0].endswith("_stderr")
     }
+
+
+def logical_model(row: dict[str, Any]) -> str:
+    label = row.get("model_label")
+    if label is not None:
+        return str(label)
+    return str(row["unit"]).split("-b", 1)[0]
+
+
+def normalized_dataset_fingerprint(row: dict[str, Any]) -> str | None:
+    provenance = row.get("task_provenance", {})
+    config = provenance.get("task_config")
+    sample_count = provenance.get("sample_count")
+    sample_hash = provenance.get("sample_hash_fingerprint")
+    if not isinstance(config, dict) or sample_count is None or not sample_hash:
+        return provenance.get("dataset_fingerprint")
+    return task_dataset_fingerprint(config, int(sample_count), str(sample_hash))
 
 
 def compare(
@@ -111,7 +134,17 @@ def compare(
                 failures.append({"kind": "nonzero_exit", "unit": unit, "side": side})
             if not row.get("formal"):
                 failures.append({"kind": "nonformal_unit", "unit": unit, "side": side})
-        for key in ("model", "task", "batch_size"):
+        if logical_model(left_row) != logical_model(right_row):
+            failures.append(
+                {
+                    "kind": "manifest_mismatch",
+                    "unit": unit,
+                    "field": "model_label",
+                    "reference": logical_model(left_row),
+                    "candidate": logical_model(right_row),
+                }
+            )
+        for key in ("task", "batch_size"):
             if left_row.get(key) != right_row.get(key):
                 failures.append(
                     {
@@ -122,12 +155,8 @@ def compare(
                         "candidate": right_row.get(key),
                     }
                 )
-        left_fingerprint = left_row.get("task_provenance", {}).get(
-            "dataset_fingerprint"
-        )
-        right_fingerprint = right_row.get("task_provenance", {}).get(
-            "dataset_fingerprint"
-        )
+        left_fingerprint = normalized_dataset_fingerprint(left_row)
+        right_fingerprint = normalized_dataset_fingerprint(right_row)
         if not left_fingerprint or left_fingerprint != right_fingerprint:
             failures.append(
                 {
