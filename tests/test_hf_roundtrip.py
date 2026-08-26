@@ -21,6 +21,7 @@ def test_save_reload_and_package_free_auto_model(tmp_path, tiny_config):
         "model.safetensors",
         "configuration_rwkv7.py",
         "cache_rwkv7.py",
+        "kernel_bridge.py",
         "ops_rwkv7.py",
         "modeling_rwkv7.py",
     }
