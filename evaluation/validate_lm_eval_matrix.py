@@ -61,7 +61,9 @@ def main():
         indexed[(row["model"], row["task"], row["batch_size"])] = metrics
 
     failures = []
-    for model, task, _ in {(m, t, b) for m, t, b in indexed}:
+    # Compare each model/task pair once.  Iterating over the full
+    # (model, task, batch) keys reports every batch mismatch twice.
+    for model, task in {(m, t) for m, t, _ in indexed}:
         left = indexed[(model, task, 1)]
         right = indexed[(model, task, 8)]
         for key in left.keys() & right.keys():
