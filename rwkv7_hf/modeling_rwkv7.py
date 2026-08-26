@@ -24,7 +24,14 @@ except ImportError:  # pragma: no cover - older Transformers
 
 from .cache_rwkv7 import RWKV7Cache
 from .configuration_rwkv7 import RWKV7Config
+from .kernel_bridge import kernel_bridge_status as _kernel_bridge_status
 from .ops_rwkv7 import rwkv7_recurrent
+
+# The apparently unused direct import above is deliberate. Transformers'
+# local remote-code copier discovers only imports reachable from this top-level
+# modeling file before recursively validating the cached module. Keeping the
+# bridge visible here guarantees a converted self-contained directory copies
+# kernel_bridge.py together with ops_rwkv7.py.
 
 
 # Mathematically equivalent form used by the official NumPy reference.
