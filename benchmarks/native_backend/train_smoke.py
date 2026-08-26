@@ -22,6 +22,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", choices=("fp16", "bf16", "fp32"), default="fp16")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--code-sha", help="source revision when .git is unavailable")
     return parser.parse_args()
 
 
@@ -107,7 +108,7 @@ def main() -> int:
     )
     report = {
         "schema": "rwkv7-native-backend-training-smoke-v1",
-        "code_sha": git_sha(),
+        "code_sha": args.code_sha or git_sha(),
         "model": str(args.model.resolve()),
         "dtype": args.dtype,
         "seed": args.seed,

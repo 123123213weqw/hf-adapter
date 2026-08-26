@@ -34,6 +34,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--lengths", default="1,17,128")
     result.add_argument("--decode-tokens", type=int, default=64)
     result.add_argument("--seed", type=int, default=42)
+    result.add_argument("--code-sha", help="source revision when .git is unavailable")
     return result
 
 
@@ -303,7 +304,7 @@ def main() -> int:
 
     bundle: dict[str, Any] = {
         "schema": "rwkv7-native-backend-validation-v1",
-        "code_sha": git_sha(),
+        "code_sha": args.code_sha or git_sha(),
         "dtype": args.dtype,
         "expected_route": expected_route(args.dtype),
         "seed": args.seed,

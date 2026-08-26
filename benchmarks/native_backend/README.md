@@ -13,6 +13,10 @@ PYTHONPATH="$PWD:$PWD/kernel_wheel" python benchmarks/native_backend/validate.py
   --output results/native-backend/4080
 ```
 
+Remote source mirrors normally exclude `.git`; pass `--code-sha "$(git
+rev-parse HEAD)"` from the controlling checkout so every result remains tied
+to an immutable revision.
+
 FP16 requests supported by protocol v1 must select the optimized recurrent
 scan.  BF16, FP32, training, and unsupported shapes currently select the
 reference fallback; the complete HF ecosystem is then validated in `auto`

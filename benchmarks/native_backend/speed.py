@@ -31,6 +31,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--decode-tokens", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--code-sha", help="source revision when .git is unavailable")
     return parser.parse_args()
 
 
@@ -171,7 +172,7 @@ def main() -> int:
     model.eval()
     report = {
         "schema": "rwkv7-native-backend-speed-v1",
-        "code_sha": git_sha(),
+        "code_sha": args.code_sha or git_sha(),
         "model": str(args.model.resolve()),
         "dtype": args.dtype,
         "settings": {
