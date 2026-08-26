@@ -93,6 +93,24 @@ python evaluation/run_lm_eval_v100_pool.py \
   --code-sha "$(git rev-parse HEAD)"
 ```
 
+W&B remains optional and does not select the model backend. To mirror the
+same formal units to an offline W&B bundle, set `WANDB_MODE=offline` and pass
+`--wandb-args`; for optimized-backend acceptance, select the backend
+separately with `RWKV7_BACKEND=optimized`:
+
+```bash
+WANDB_MODE=offline RWKV7_BACKEND=optimized \
+python evaluation/run_lm_eval_v100_pool.py \
+  --model-root /models/rwkv7-optimized \
+  --output-dir results/lm_eval/optimized \
+  --python "$VIRTUAL_ENV/bin/python" \
+  --code-sha "$(git rev-parse HEAD)" \
+  --wandb-args project=rwkv7-hf-lm-eval,group=optimized-v0.10
+```
+
+Local result JSON, sample logs, manifests, and exit status remain the release
+evidence; W&B is only a mirror of those optimized-backend runs.
+
 The pool runs all 24 batch-one units first with six processes per V100, then
 the higher-memory batch-eight units with two per V100. Every unit retains its
 own raw command, logs, manifest and result directory before the normal merge

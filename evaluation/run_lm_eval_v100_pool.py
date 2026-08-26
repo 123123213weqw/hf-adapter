@@ -51,6 +51,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gpu", action="append", default=[])
     parser.add_argument("--batch1-workers-per-gpu", type=int, default=6)
     parser.add_argument("--batch8-workers-per-gpu", type=int, default=2)
+    parser.add_argument(
+        "--wandb-args",
+        default=None,
+        help="Forward lm_eval W&B arguments to every matrix unit",
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -67,6 +72,7 @@ def run_unit(
     folder: str,
     task: str,
     batch_size: int,
+    wandb_args: str | None,
     force: bool,
 ) -> dict:
     unit = f"{label}-b{batch_size}-{task}"
@@ -86,6 +92,8 @@ def run_unit(
         "--code-sha",
         code_sha,
     ]
+    if wandb_args:
+        command.extend(("--wandb-args", wandb_args))
     if force:
         command.append("--force")
     environment = os.environ.copy()
@@ -141,6 +149,7 @@ def run_phase(args: argparse.Namespace, batch_size: int, workers_per_gpu: int) -
                     folder=folder,
                     task=task,
                     batch_size=batch_size,
+                    wandb_args=args.wandb_args,
                     force=args.force,
                 )
             )
