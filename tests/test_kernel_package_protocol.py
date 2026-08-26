@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import pytest
 import torch
 
 from rwkv7_hf import kernel_bridge
@@ -30,3 +31,35 @@ def test_source_kernel_package_exposes_protocol_and_cpu_falls_back(monkeypatch):
     torch.testing.assert_close(actual[0], expected[0])
     torch.testing.assert_close(actual[1], expected[1])
     assert kernel_bridge.last_backend_route()["selected"] == "reference"
+
+
+def test_source_kernel_package_exposes_opt_in_triton_lane(monkeypatch):
+    kernel_root = Path(__file__).resolve().parents[1] / "kernel_wheel"
+    monkeypatch.syspath_prepend(str(kernel_root))
+    monkeypatch.setenv("RWKV7_KERNEL_IMPL", "triton")
+    monkeypatch.delitem(sys.modules, "rwkv7_kernels", raising=False)
+
+    import rwkv7_kernels
+
+    shape = (1, 2, 1, 64)
+    values = [torch.randn(shape) for _ in range(6)]
+    state = torch.randn(1, 1, 64, 64)
+    support = rwkv7_kernels.probe_recurrent_v1(*values, state, None)
+    assert not support["supported"]
+    assert support["implementation"] == "native-triton-rank1-scan-v1"
+    assert any(word in support["reason"] for word in ("CUDA", "Triton"))
+
+
+def test_source_kernel_package_rejects_unknown_implementation(monkeypatch):
+    kernel_root = Path(__file__).resolve().parents[1] / "kernel_wheel"
+    monkeypatch.syspath_prepend(str(kernel_root))
+    monkeypatch.setenv("RWKV7_KERNEL_IMPL", "mystery")
+    monkeypatch.delitem(sys.modules, "rwkv7_kernels", raising=False)
+
+    import rwkv7_kernels
+
+    shape = (1, 1, 1, 64)
+    values = [torch.randn(shape) for _ in range(6)]
+    state = torch.randn(1, 1, 64, 64)
+    with pytest.raises(ValueError, match="RWKV7_KERNEL_IMPL"):
+        rwkv7_kernels.probe_recurrent_v1(*values, state, None)
