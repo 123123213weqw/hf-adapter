@@ -64,3 +64,22 @@ complete AutoModel/generation, cache, padding, official-checkpoint, `lm_eval`,
 Trainer, Accelerate, PEFT, and TRL matrix runs with `auto`.  Supported lanes
 also run with forced `optimized`; unsupported lanes must produce an explicit
 reason and pass through reference in `auto`.
+
+The formal optimized-backend gate repeats the same 48-unit
+`lm_eval==0.4.9.1` matrix used by the reference line (three model sizes,
+batch 1/8, and eight tasks) with `RWKV7_BACKEND=optimized`.  Forced mode makes
+an unsupported shape or hidden fallback fail immediately.  Compare the two
+completed bundles with:
+
+```bash
+python evaluation/compare_lm_eval_matrices.py \
+  --reference-dir results/lm-eval-reference/merged \
+  --candidate-dir results/lm-eval-optimized/merged \
+  --output results/lm-eval-optimized/parity.json
+```
+
+The comparison requires all 48 formal units, identical dataset fingerprints
+and metric sets, finite values, and exact metric equality by default.  The v1
+wheel is inference-only, so training checks use `auto`: Trainer, Accelerate,
+PEFT, and TRL then execute the same readable autograd path rather than an
+unvalidated backward kernel.
