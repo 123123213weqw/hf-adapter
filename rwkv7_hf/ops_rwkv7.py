@@ -157,8 +157,8 @@ def rwkv7_recurrent(
     """Run RWKV-7 with an optional Mamba-style optimized operator.
 
     The surrounding model and cache semantics do not change. ``auto`` uses an
-    installed versioned ``rwkv7_kernels`` implementation only when that
-    package explicitly accepts the complete request; otherwise the readable
+    installed versioned companion implementation only when that package
+    explicitly accepts the complete request; otherwise the readable
     PyTorch implementation remains the fallback.
     """
 

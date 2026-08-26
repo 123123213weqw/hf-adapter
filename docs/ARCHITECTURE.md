@@ -50,3 +50,21 @@ a 2-D `attention_mask`, `past_key_values`, `labels`,
 and -100 is ignored. Cache is disabled while training and gradient
 checkpointing. `output_attentions=True` raises `NotImplementedError`
 because RWKV has no Transformer attention matrix to return.
+
+## Mamba-style separation
+
+The separation mirrors the current Transformers Mamba2 pattern without
+copying its SSM implementation:
+
+| responsibility | Mamba2 | RWKV7 |
+|---|---|---|
+| readable architecture | `modeling_mamba2.py` mixer/model/LM | `modeling_rwkv7.py` TMix/CMix/model/LM |
+| readable math fallback | decorated PyTorch kernel functions | `rwkv7_recurrent_reference` |
+| optimized boundary | kernelized function decorators | versioned `kernel_bridge.py` protocol |
+| state lifecycle | HF cache layers | `RWKV7Cache` canonical state and shifts |
+| unsupported requests | PyTorch fallback | PyTorch fallback with a recorded reason |
+
+The optional package never defines a model class, config class, cache class,
+loss, layer loop, or generation method.  Tests reject CUDA, Triton, graph,
+device-capability, environment-route, and companion-package policy inside
+`modeling_rwkv7.py`, `configuration_rwkv7.py`, and the readable operator.
