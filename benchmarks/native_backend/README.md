@@ -27,6 +27,12 @@ mode so installing the package cannot reduce compatibility.
 It requires the installed inference backend to select reference for autograd
 and checks bit-equal loss, logits, and a representative projection gradient.
 
+`hf_ecosystem_smoke.py` loads a self-contained converted directory through
+`AutoModelForCausalLM(..., trust_remote_code=True)`, then covers padded cache,
+cached decode, beam generation, save/reload, gradient checkpointing and
+backward.  It verifies the dynamic remote-code module itself selected the
+optimized route for inference and the reference route for autograd.
+
 `speed.py` measures the same loaded model with `reference` and `auto` routing.
 It records generation-prefill and cached-decode latency, raw samples, memory,
 route decisions, and the complete environment without enabling CUDA graphs or
