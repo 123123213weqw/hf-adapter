@@ -1,0 +1,21 @@
+{
+  "0.1b": {
+    "kind": "local",
+    "path": "/home/ubuntu/codex-run/models/rwkv7-0.1b-hf",
+    "requested_revision": null,
+    "resolved_revision": "624a5ba79348c78c135db4729d70c62a1c7d2800267cee0e54d256fa735249d5",
+    "files": {
+      "cache_rwkv7.py": "8d2cc30f05d04eca4521026b1cb4683001c6f3e625a39e30451c74df092ba99b",
+      "config.json": "a62082ea59f4ed55eb5a7939a56ede61436489409d5675a3a4ac8cd14e179e5c",
+      "configuration_rwkv7.py": "6b1b07047312e1fb9f63e501e9f5939f3d7e1d9ebf9b9ff526e1ac651a169726",
+      "generation_config.json": "7d48c029311a6b44993c464b9ea87f3ec224f416fa9f103997a0677bc03f8142",
+      "kernel_bridge.py": "caaeb39e5f20c45fadc70a5e13f70e417e8b0367f965f2cff1a1713f731907c8",
+      "model.safetensors": "12d208adf2880927615656c2dc3f6fb6a3ea3120a9ed9fdfeeea55c841723d79",
+      "modeling_rwkv7.py": "4447d87896f61e8ead534618252522a2bb12bc4da3e95c926bf7d4160aeea877",
+      "ops_rwkv7.py": "3e4c29061cbf96bad4b7b5d2a1d27323a437e609707b6e90bca73d1f436d0ed4",
+      "special_tokens_map.json": "37c7ff84c6d1505bfb79f523ced0656802fe4bc420fe68aa89b612166944b850",
+      "tokenization_rwkv7.py": "b08da37df93e51806ad78985834286050da465251e9d3e04598e4a69d05280dd",
+      "tokenizer_config.json": "519c52c26c082846972f0ad62399449079c4846c81491264945852bda459cc84"
+    }
+  }
+}

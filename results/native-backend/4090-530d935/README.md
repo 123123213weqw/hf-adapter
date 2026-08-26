@@ -14,6 +14,9 @@
 - PyTorch 2.5 checkpointing regression: fixed. Training now receives an explicit
   semantic training hint and never enters the inference-only v1 backend; graph
   replay mutations remain inside `torch.inference_mode()`.
+- `lm_eval==0.4.9.1` PR smoke: 8/8 tasks passed on 0.1B, batch 1, limit 2.
+  `lm-eval-smoke/manifest.jsonl` retains both the first invalid `~` path attempt
+  and the successful absolute-path retry; the last record for every unit passed.
 
 ## 0.4B paired speed (FP16)
 
