@@ -163,6 +163,8 @@ def prepare_run(args, dataset_name: str, dataset_revision: str) -> Path:
         "peft": package_version("peft"),
         "datasets": package_version("datasets"),
         "wandb": package_version("wandb"),
+        "rwkv7_hf": package_version("rwkv7-hf"),
+        "rwkv7_kernels": package_version("rwkv7-kernels"),
     }
     (output / "environment.json").write_text(
         json.dumps(environment, indent=2) + "\n"

@@ -83,3 +83,9 @@ and metric sets, finite values, and exact metric equality by default.  The v1
 wheel is inference-only, so training checks use `auto`: Trainer, Accelerate,
 PEFT, and TRL then execute the same readable autograd path rather than an
 unvalidated backward kernel.
+
+The release bundle additionally runs one artifact-producing step of each
+public LoRA SFT, DPO, and GRPO example with both distributions installed.
+`evaluation/validate_finetune_smoke_runs.py` requires finite loss, nonzero
+gradients, changed adapter parameters, exact adapter save/reload, complete
+source/model provenance, and recorded `rwkv7-hf` / `rwkv7-kernels` versions.
