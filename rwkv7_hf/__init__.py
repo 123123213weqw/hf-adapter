@@ -25,7 +25,7 @@ from .tokenization_rwkv7 import RWKV7Tokenizer
 try:
     __version__ = version("rwkv7-hf")
 except PackageNotFoundError:
-    __version__ = "0.9.0"
+    __version__ = "0.10.0.dev0"
 
 
 __all__ = [
