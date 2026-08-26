@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0.dev0
+
+- Added a versioned optional recurrence protocol without moving hardware
+  policy into config or modeling.
+- Added a separate `rwkv7-kernels` companion whose promoted CUDA-graph v1
+  backend preserves bit-exact reference operation order.
+- Added fail-closed forced routing and automatic fallback for training, BF16,
+  FP32, CPU, unsupported shapes, missing packages, and protocol mismatches.
+- Added operator/model/cache/padding/teacher-decode/greedy/training validation
+  bundles and paired reference-versus-auto speed measurement.
+- Applied `logits_to_keep` before the vocabulary projection in label-free
+  inference, matching the current Mamba-style HF contract.
+
 ## 0.9.0
 
 - Replaced the default runtime with a readable pure-PyTorch HF reference model.

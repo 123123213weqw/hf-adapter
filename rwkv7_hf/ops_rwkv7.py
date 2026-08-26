@@ -1,11 +1,16 @@
 # coding=utf-8
-"""Small, hardware-neutral PyTorch operator boundary for RWKV-7."""
+"""Readable RWKV-7 recurrence plus one optional optimized boundary."""
 from __future__ import annotations
 
 import torch
 
+try:
+    from .kernel_bridge import try_optimized_recurrent
+except ImportError:  # package-free Hugging Face remote-code execution
+    from kernel_bridge import try_optimized_recurrent
 
-def rwkv7_recurrent(
+
+def _validate_recurrent_inputs(
     receptance: torch.Tensor,
     decay: torch.Tensor,
     key: torch.Tensor,
@@ -14,29 +19,7 @@ def rwkv7_recurrent(
     b: torch.Tensor,
     initial_state: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Evaluate the RWKV-7 recurrent update in canonical [K,V] layout.
-
-    Args:
-        receptance, decay, key, a, b:
-            Tensors shaped [batch, time, heads, key_dim].
-        value:
-            Tensor shaped [batch, time, heads, value_dim].
-        initial_state:
-            Tensor shaped [batch, heads, key_dim, value_dim].
-        attention_mask:
-            Optional boolean tensor shaped [batch, time]. A false position
-            produces a zero output and leaves that batch row's state unchanged.
-
-    Returns:
-        Sequence outputs [batch, time, heads, value_dim] and the final
-        recurrent state [batch, heads, key_dim, value_dim].
-
-    This deliberately contains no dispatch, compilation, environment-variable,
-    device, or layout policy. A performance branch can replace this one
-    boundary while the surrounding HF model remains unchanged.
-    """
-
+) -> tuple[int, int, int, int, int, torch.Tensor | None]:
     if receptance.ndim != 4:
         raise ValueError("RWKV7 recurrent inputs must be shaped [B,T,H,D]")
     if any(tensor.ndim != 4 for tensor in (decay, key, value, a, b)):
@@ -58,6 +41,31 @@ def rwkv7_recurrent(
         attention_mask = attention_mask.to(
             device=initial_state.device, dtype=torch.bool
         )
+    return batch, time, heads, key_dim, value_dim, attention_mask
+
+
+def rwkv7_recurrent_reference(
+    receptance: torch.Tensor,
+    decay: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    initial_state: torch.Tensor,
+    attention_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Evaluate the readable PyTorch recurrence in canonical ``[K,V]`` layout."""
+
+    batch, time, _, _, _, attention_mask = _validate_recurrent_inputs(
+        receptance,
+        decay,
+        key,
+        value,
+        a,
+        b,
+        initial_state,
+        attention_mask,
+    )
 
     state = initial_state
     outputs: list[torch.Tensor] = []
@@ -105,4 +113,93 @@ def rwkv7_recurrent(
     return torch.stack(outputs, dim=1), state
 
 
-__all__ = ["rwkv7_recurrent"]
+def _validate_optimized_result(
+    result,
+    *,
+    receptance: torch.Tensor,
+    value: torch.Tensor,
+    initial_state: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if not isinstance(result, (tuple, list)) or len(result) != 2:
+        raise TypeError("optimized RWKV7 recurrence must return (output, final_state)")
+    output, final_state = result
+    if not isinstance(output, torch.Tensor) or not isinstance(final_state, torch.Tensor):
+        raise TypeError("optimized RWKV7 recurrence must return two tensors")
+    expected_output = (*receptance.shape[:3], value.shape[-1])
+    if tuple(output.shape) != tuple(expected_output):
+        raise RuntimeError(
+            f"optimized RWKV7 output shape {tuple(output.shape)} != {expected_output}"
+        )
+    if tuple(final_state.shape) != tuple(initial_state.shape):
+        raise RuntimeError(
+            "optimized RWKV7 final-state shape "
+            f"{tuple(final_state.shape)} != {tuple(initial_state.shape)}"
+        )
+    if output.device != value.device or final_state.device != initial_state.device:
+        raise RuntimeError("optimized RWKV7 backend returned tensors on the wrong device")
+    if output.dtype != value.dtype or final_state.dtype != initial_state.dtype:
+        raise RuntimeError("optimized RWKV7 backend returned tensors with the wrong dtype")
+    return output, final_state
+
+
+def rwkv7_recurrent(
+    receptance: torch.Tensor,
+    decay: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    initial_state: torch.Tensor,
+    attention_mask: torch.Tensor | None = None,
+    *,
+    backend: str | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run RWKV-7 with an optional Mamba-style optimized operator.
+
+    The surrounding model and cache semantics do not change. ``auto`` uses an
+    installed versioned ``rwkv7_kernels`` implementation only when that
+    package explicitly accepts the complete request; otherwise the readable
+    PyTorch implementation remains the fallback.
+    """
+
+    _, _, _, _, _, attention_mask = _validate_recurrent_inputs(
+        receptance,
+        decay,
+        key,
+        value,
+        a,
+        b,
+        initial_state,
+        attention_mask,
+    )
+    optimized = try_optimized_recurrent(
+        receptance,
+        decay,
+        key,
+        value,
+        a,
+        b,
+        initial_state,
+        attention_mask,
+        backend=backend,
+    )
+    if optimized is not None:
+        return _validate_optimized_result(
+            optimized,
+            receptance=receptance,
+            value=value,
+            initial_state=initial_state,
+        )
+    return rwkv7_recurrent_reference(
+        receptance,
+        decay,
+        key,
+        value,
+        a,
+        b,
+        initial_state,
+        attention_mask,
+    )
+
+
+__all__ = ["rwkv7_recurrent", "rwkv7_recurrent_reference"]

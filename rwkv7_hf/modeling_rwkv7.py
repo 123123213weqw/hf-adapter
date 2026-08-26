@@ -935,10 +935,13 @@ class RWKV7ForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
             cache_position=cache_position,
             **kwargs,
         )
-        full_logits = self.lm_head(outputs.last_hidden_state)
-
         loss = None
         if labels is not None:
+            # Training loss needs every time step. Inference follows the
+            # standard HF/Mamba contract and slices hidden states before the
+            # vocabulary projection so long-prefill generation does not
+            # allocate unused full-sequence logits.
+            full_logits = self.lm_head(outputs.last_hidden_state)
             if labels.ndim == 1:
                 labels = labels.unsqueeze(0)
             if tuple(labels.shape[:2]) != tuple(full_logits.shape[:2]):
@@ -962,8 +965,12 @@ class RWKV7ForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
                     shifted_labels.reshape(-1),
                     ignore_index=-100,
                 )
-
-        logits = _select_logits(full_logits, logits_to_keep)
+            logits = _select_logits(full_logits, logits_to_keep)
+        else:
+            selected_hidden = _select_logits(
+                outputs.last_hidden_state, logits_to_keep
+            )
+            logits = self.lm_head(selected_hidden)
         return_dict = (
             self.config.use_return_dict if return_dict is None else bool(return_dict)
         )

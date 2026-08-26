@@ -161,3 +161,28 @@ def test_gradient_checkpointing_disables_cache(tiny_config):
     output = model(input_ids=ids, labels=ids, use_cache=True)
     assert output.past_key_values is None
     output.loss.backward()
+
+
+def test_logits_to_keep_slices_before_lm_head_without_labels(tiny_config):
+    torch.manual_seed(29)
+    model = RWKV7ForCausalLM(tiny_config).eval()
+    ids = torch.randint(1, tiny_config.vocab_size, (2, 9))
+    seen_shapes = []
+    original_forward = model.lm_head.forward
+
+    def recording_forward(hidden_states):
+        seen_shapes.append(tuple(hidden_states.shape))
+        return original_forward(hidden_states)
+
+    model.lm_head.forward = recording_forward
+    with torch.inference_mode():
+        full = model(input_ids=ids, logits_to_keep=0).logits
+        last_two = model(input_ids=ids, logits_to_keep=2).logits
+        indexed = model(
+            input_ids=ids,
+            logits_to_keep=torch.tensor([1, 5, 8]),
+        ).logits
+    hidden = tiny_config.hidden_size
+    assert seen_shapes == [(2, 9, hidden), (2, 2, hidden), (2, 3, hidden)]
+    torch.testing.assert_close(last_two, full[:, -2:])
+    torch.testing.assert_close(indexed, full[:, [1, 5, 8]])

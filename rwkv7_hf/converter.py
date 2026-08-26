@@ -41,6 +41,7 @@ ADAPTER_LAYOUTS = ("reference", "thin")
 REFERENCE_ADAPTER_FILES = (
     "configuration_rwkv7.py",
     "cache_rwkv7.py",
+    "kernel_bridge.py",
     "ops_rwkv7.py",
     "modeling_rwkv7.py",
     "tokenization_rwkv7.py",

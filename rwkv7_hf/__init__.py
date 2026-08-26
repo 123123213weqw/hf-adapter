@@ -4,6 +4,12 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .cache_rwkv7 import NativeRWKV7Cache, RWKV7Cache, RWKV7StateCache
 from .configuration_rwkv7 import NativeRWKV7Config, RWKV7Config
+from .kernel_bridge import (
+    current_backend_mode,
+    kernel_bridge_status,
+    last_backend_route,
+    use_rwkv7_backend,
+)
 from .modeling_rwkv7 import (
     NativeRWKV7ForCausalLM,
     NativeRWKV7Model,
@@ -34,6 +40,10 @@ __all__ = [
     "RWKV7Model",
     "RWKV7ForCausalLM",
     "RWKV7Tokenizer",
+    "current_backend_mode",
+    "kernel_bridge_status",
+    "last_backend_route",
+    "use_rwkv7_backend",
     "NativeRWKV7Config",
     "NativeRWKV7Cache",
     "NativeRWKV7Model",

@@ -6,8 +6,9 @@ A readable, pure-PyTorch RWKV-7 implementation for Hugging Face Transformers.
 Version 0.9 makes compatibility and reproducibility the default: the model
 architecture is visible in one `modeling_rwkv7.py`, recurrent math has one
 small boundary in `ops_rwkv7.py`, and each converted model is self-contained.
-CUDA/JIT/graph/quantization kernels remain on the long-lived
-`perf/native-kernels-v0.8` branch and are not part of this reference line.
+Aggressive CUDA/JIT/quantization experiments remain on the long-lived
+`perf/native-kernels-v0.8` branch.  An optional, versioned operator package can
+accelerate the one recurrence boundary without replacing this model.
 
 ## Install and use a published model
 
@@ -64,6 +65,20 @@ layout for older deployment workflows.
   and Trainer/TRL surfaces
 
 Historical `NativeRWKV7*` class names are 0.9 compatibility aliases.
+
+## Optional exact performance backend
+
+The base model always runs without an operator wheel.  Installing the separate
+`rwkv7-kernels` companion enables `auto` routing for validated CUDA FP16
+inference shapes.  Protocol v1 replays the same readable recurrence in CUDA
+graphs, so 4080 validation is bit-exact while prefill is 1.9–2.8x faster in the
+measured 0.4B B1/B4 cases.  Training, BF16, FP32, CPU, and unsupported shapes
+stay on the reference path.
+
+The model still contains the full architecture; the companion owns only
+`probe_recurrent_v1` and `recurrent_v1`.  See
+[optional optimized backends](docs/OPTIMIZED_BACKENDS.md) and the auditable
+[validation scripts](benchmarks/native_backend/README.md).
 
 ## Reproduction
 

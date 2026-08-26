@@ -29,6 +29,7 @@ def test_reference_layout_contains_complete_model_code(tmp_path):
     )
     for name in REFERENCE_ADAPTER_FILES:
         assert (tmp_path / name).is_file()
+    assert (tmp_path / "kernel_bridge.py").is_file()
     assert (tmp_path / "rwkv_vocab_v20230424.txt").is_file()
 
     (tmp_path / "config.json").write_text(

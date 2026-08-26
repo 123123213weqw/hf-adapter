@@ -1,11 +1,13 @@
 # Architecture
 
-The reference line copies four model files into every converted model repository:
+The reference line copies five architecture/runtime files into every converted
+model repository:
 
 1. `configuration_rwkv7.py` — architecture-only configuration.
 2. `cache_rwkv7.py` — recurrent cache lifecycle and batch operations.
-3. `ops_rwkv7.py` — one pure-PyTorch WKV recurrence boundary.
-4. `modeling_rwkv7.py` — TMix, CMix, blocks, backbone and causal LM.
+3. `kernel_bridge.py` — versioned optional-backend discovery and diagnostics.
+4. `ops_rwkv7.py` — readable PyTorch WKV plus one dispatch boundary.
+5. `modeling_rwkv7.py` — TMix, CMix, blocks, backbone and causal LM.
 
 `RWKV7TimeMix` computes shifts and R/W/K/V/A/G projections, calls
 `rwkv7_recurrent`, applies GroupNorm and the direct RKV term, then projects
@@ -34,8 +36,10 @@ training framework regroups the same examples, `modeling_rwkv7.py` tiles batch
 and time into a fixed 128-row linear shape. Padding rows are discarded before
 the recurrent boundary; `ops_rwkv7.py` remains the direct batched equation.
 This changes neither the RWKV equations nor checkpoint keys and has no
-device-specific route, environment variable, compiled extension, or custom
-kernel.
+device-specific route or custom kernel inside modeling.  `kernel_bridge.py`
+may call an independently installed backend after an explicit protocol probe;
+otherwise `ops_rwkv7.py` executes the same reference equation.  Runtime
+routing is never serialized into a checkpoint.
 
 ## HF contract
 
