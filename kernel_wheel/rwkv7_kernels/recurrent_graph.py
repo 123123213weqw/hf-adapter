@@ -97,11 +97,16 @@ class _GraphEntry:
         return cls(static, static_mask, graph, output)
 
     def run(self, tensors, attention_mask):
-        for target, source in zip(self.inputs, tensors):
-            target.copy_(source)
-        if self.mask is not None:
-            self.mask.copy_(attention_mask)
-        self.graph.replay()
+        # Static buffers may have been allocated while the caller was inside
+        # ``torch.inference_mode``. PyTorch 2.5 rejects mutating such tensors
+        # from an ordinary/no-grad context, so replay preparation must retain
+        # inference mode as well.
+        with torch.inference_mode():
+            for target, source in zip(self.inputs, tensors):
+                target.copy_(source)
+            if self.mask is not None:
+                self.mask.copy_(attention_mask)
+            self.graph.replay()
         # The graph owns static output buffers.  Callers and HF caches must be
         # free to retain results after this entry is replayed by another layer.
         return self.output[0].clone(), self.output[1].clone()
@@ -137,7 +142,7 @@ def probe_recurrent_v1(
             "implementation": implementation,
             "reason": "the v1 graph backend requires CUDA tensors",
         }
-    if torch.is_grad_enabled() and any(value.requires_grad for value in tensors):
+    if any(value.requires_grad for value in tensors):
         return {
             "supported": False,
             "implementation": implementation,

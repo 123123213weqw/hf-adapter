@@ -153,6 +153,7 @@ def rwkv7_recurrent(
     attention_mask: torch.Tensor | None = None,
     *,
     backend: str | None = None,
+    training: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run RWKV-7 with an optional Mamba-style optimized operator.
 
@@ -182,6 +183,7 @@ def rwkv7_recurrent(
         initial_state,
         attention_mask,
         backend=backend,
+        training=training,
     )
     if optimized is not None:
         return _validate_optimized_result(

@@ -130,3 +130,19 @@ def test_invalid_backend_name_is_rejected():
     with pytest.raises(ValueError, match="one of auto, reference, optimized"):
         rwkv7_recurrent(*recurrent_inputs(), backend="fastest")
 
+
+def test_training_hint_never_enters_inference_backend(monkeypatch):
+    calls = install_fake_kernel(monkeypatch)
+    inputs = recurrent_inputs()
+    actual = rwkv7_recurrent(*inputs, training=True)
+    expected = rwkv7_recurrent_reference(*inputs)
+    torch.testing.assert_close(actual[0], expected[0])
+    assert calls == {"probe": 0, "run": 0}
+    assert kernel_bridge.last_backend_route() == {
+        "requested": "auto",
+        "selected": "reference",
+        "implementation": "torch",
+        "reason": "the optimized recurrent protocol v1 is inference-only during training",
+    }
+    with pytest.raises(RuntimeError, match="inference-only during training"):
+        rwkv7_recurrent(*inputs, backend="optimized", training=True)

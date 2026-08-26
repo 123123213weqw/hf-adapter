@@ -144,6 +144,7 @@ def try_optimized_recurrent(
     attention_mask,
     *,
     backend: str | None = None,
+    training: bool = False,
 ):
     """Return an optimized result or ``None`` when reference should run."""
 
@@ -154,6 +155,26 @@ def try_optimized_recurrent(
             selected="reference",
             implementation="torch",
             reason="reference backend was explicitly requested",
+        )
+        return None
+
+    # Re-entrant gradient checkpointing deliberately executes its first
+    # forward under ``no_grad``. Tensor ``requires_grad`` and
+    # ``torch.is_grad_enabled()`` therefore cannot reliably distinguish that
+    # training pass from inference. The owning TimeMix module supplies the
+    # semantic mode explicitly so an inference-only backend is never entered
+    # during either checkpoint pass.
+    if training:
+        reason = "the optimized recurrent protocol v1 is inference-only during training"
+        if requested == "optimized":
+            raise RuntimeError(
+                f"optimized RWKV7 backend does not support this request: {reason}"
+            )
+        _record_route(
+            requested=requested,
+            selected="reference",
+            implementation="torch",
+            reason=reason,
         )
         return None
 
