@@ -67,50 +67,61 @@ def rwkv7_recurrent_reference(
         attention_mask,
     )
 
-    state = initial_state
-    outputs: list[torch.Tensor] = []
-    for token_idx in range(time):
-        # Match the official reference's mixed-precision contract exactly:
-        # projections and their outer products stay in the model dtype, while
-        # the accumulated recurrent state and decay are FP32.  Casting every
-        # operand to the state dtype here looks numerically attractive, but it
-        # is a different model in FP16/BF16 and makes a converted checkpoint
-        # diverge from the official token-wise implementation.
-        r_t = receptance[:, token_idx]
-        w_t = decay[:, token_idx].to(dtype=state.dtype)
-        k_t = key[:, token_idx]
-        v_t = value[:, token_idx]
-        a_t = a[:, token_idx]
-        b_t = b[:, token_idx]
-
-        # The public/cache layout is [K,V]. Evaluate the equation in the
-        # official [V,K] presentation, then transpose the result back. Keeping
-        # this multiplication order is important for numerical parity with the
-        # official RWKV implementation over long recurrent sequences.
-        state_vk = state.transpose(-1, -2)
-        ab = a_t.unsqueeze(-1) @ b_t.unsqueeze(-2)
-        vk = v_t.unsqueeze(-1) @ k_t.unsqueeze(-2)
-        candidate_vk = (
-            state_vk * w_t.unsqueeze(-2)
-            + state_vk @ ab.to(dtype=state.dtype)
-            + vk.to(dtype=state.dtype)
+    # Evaluate samples independently so a framework can regroup requests
+    # without changing the FP16 batched-matmul shape or close lm_eval scores.
+    # This is the direct public equation, not a hardware route or fused kernel.
+    def run_sample(batch_index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        state = initial_state[batch_index : batch_index + 1]
+        sample_mask = (
+            None
+            if attention_mask is None
+            else attention_mask[batch_index : batch_index + 1]
         )
-        candidate = candidate_vk.transpose(-1, -2)
-        output = (
-            candidate_vk.to(dtype=r_t.dtype) @ r_t.unsqueeze(-1)
-        ).squeeze(-1)
+        outputs: list[torch.Tensor] = []
+        for token_idx in range(time):
+            # Match the official reference's mixed-precision contract exactly:
+            # projections and their outer products stay in the model dtype,
+            # while the accumulated recurrent state and decay are FP32.
+            r_t = receptance[batch_index : batch_index + 1, token_idx]
+            w_t = decay[batch_index : batch_index + 1, token_idx].to(
+                dtype=state.dtype
+            )
+            k_t = key[batch_index : batch_index + 1, token_idx]
+            v_t = value[batch_index : batch_index + 1, token_idx]
+            a_t = a[batch_index : batch_index + 1, token_idx]
+            b_t = b[batch_index : batch_index + 1, token_idx]
 
-        if attention_mask is not None:
-            active = attention_mask[:, token_idx]
-            state_active = active.view(batch, 1, 1, 1)
-            output_active = active.view(batch, 1, 1)
-            state = torch.where(state_active, candidate, state)
-            output = torch.where(output_active, output, torch.zeros_like(output))
-        else:
-            state = candidate
-        outputs.append(output.to(dtype=value.dtype))
+            # The public/cache layout is [K,V]. Evaluate the equation in the
+            # official [V,K] presentation, then transpose the result back.
+            state_vk = state.transpose(-1, -2)
+            ab = a_t.unsqueeze(-1) @ b_t.unsqueeze(-2)
+            vk = v_t.unsqueeze(-1) @ k_t.unsqueeze(-2)
+            candidate_vk = (
+                state_vk * w_t.unsqueeze(-2)
+                + state_vk @ ab.to(dtype=state.dtype)
+                + vk.to(dtype=state.dtype)
+            )
+            candidate = candidate_vk.transpose(-1, -2)
+            output = (
+                candidate_vk.to(dtype=r_t.dtype) @ r_t.unsqueeze(-1)
+            ).squeeze(-1)
 
-    return torch.stack(outputs, dim=1), state
+            if sample_mask is not None:
+                active = sample_mask[:, token_idx]
+                state = torch.where(active.view(1, 1, 1, 1), candidate, state)
+                output = torch.where(
+                    active.view(1, 1, 1), output, torch.zeros_like(output)
+                )
+            else:
+                state = candidate
+            outputs.append(output.to(dtype=value.dtype))
+        return torch.stack(outputs, dim=1), state
+
+    samples = [run_sample(batch_index) for batch_index in range(batch)]
+    return (
+        torch.cat([sample[0] for sample in samples], dim=0),
+        torch.cat([sample[1] for sample in samples], dim=0),
+    )
 
 
 def _validate_optimized_result(

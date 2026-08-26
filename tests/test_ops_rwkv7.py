@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from rwkv7_hf.ops_rwkv7 import rwkv7_recurrent
+from rwkv7_hf.ops_rwkv7 import rwkv7_recurrent, rwkv7_recurrent_reference
 
 
 def official_vk_reference(r, w, k, v, a, b, state_kv, mask=None):
@@ -50,3 +50,20 @@ def test_operator_output_state_and_gradients_match_official_equation():
     expected_gradients = torch.autograd.grad(expected_loss, tensors + [state])
     for actual, expected in zip(gradients, expected_gradients):
         torch.testing.assert_close(actual, expected, rtol=1e-11, atol=1e-11)
+
+
+def test_reference_recurrence_is_invariant_to_batch_regrouping():
+    torch.manual_seed(124)
+    shape = (8, 5, 2, 4)
+    tensors = [torch.randn(shape, dtype=torch.float16) for _ in range(6)]
+    state = torch.randn(8, 2, 4, 4, dtype=torch.float32)
+    mask = torch.ones(8, 5, dtype=torch.bool)
+    mask[5, :2] = False
+
+    grouped = rwkv7_recurrent_reference(*tensors, state, mask)
+    isolated = rwkv7_recurrent_reference(
+        *(value[5:6] for value in tensors), state[5:6], mask[5:6]
+    )
+
+    torch.testing.assert_close(grouped[0][5:6], isolated[0], rtol=0, atol=0)
+    torch.testing.assert_close(grouped[1][5:6], isolated[1], rtol=0, atol=0)
