@@ -1,0 +1,548 @@
+{
+  "code_sha": "074b2fdc1707216fe14ef458e9ca5aff01b41874",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "13.0",
+    "device": "NVIDIA GeForce RTX 4080",
+    "kernel_bridge": {
+      "api_version": 1,
+      "last_route": null,
+      "mode": "auto",
+      "package_available": true,
+      "package_error": null
+    },
+    "platform": "Linux-7.0.0-29-generic-x86_64-with-glibc2.39",
+    "python": "3.12.2 | packaged by conda-forge | (main, Feb 16 2024, 20:50:58) [GCC 12.3.0]",
+    "torch": "2.11.0+cu130"
+  },
+  "expected_route": "optimized",
+  "models": {
+    "0.1b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999998807907104,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "teacher_forced_logits": {
+          "cosine": 0.9999998807907104,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999997019767761
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999997615814209
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999999403953552
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 0.9999998807907104,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 1.000000238418579,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998211860657
+        }
+      ],
+      "config_sha256": "983e4fd48d1c5181864457c2dc745e622eb842fc212ac279b66c7bd16b2d38c1",
+      "passed": true,
+      "path": "/home/wzu/codex-run/rwkv7-reference-v090/rwkv7-0.1b-hf"
+    },
+    "0.4b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999998211860657,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "teacher_forced_logits": {
+          "cosine": 1.0000001192092896,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 0.9999999403953552,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 1.0,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 0.9999999403953552,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        }
+      ],
+      "config_sha256": "2fb2e6fca9c14d99198d67629972c92a641084f4d533000eab2449ec4d26ff81",
+      "passed": true,
+      "path": "/home/wzu/.private/rwkv7-hf-4080/models/rwkv7-g1d-0.4b-hf"
+    },
+    "1.5b": {
+      "cached_and_greedy": {
+        "final_state_min_cosine": 0.9999998807907104,
+        "greedy_equal": true,
+        "greedy_tokens": 64,
+        "passed": true,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "teacher_forced_logits": {
+          "cosine": 1.000000238418579,
+          "finite": true,
+          "max_abs": 0.0
+        }
+      },
+      "cases": [
+        {
+          "batch": 1,
+          "length": 1,
+          "logits": {
+            "cosine": 0.9999998807907104,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998211860657
+        },
+        {
+          "batch": 1,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 1,
+          "length": 128,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 1,
+          "logits": {
+            "cosine": 0.9999999403953552,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998211860657
+        },
+        {
+          "batch": 4,
+          "length": 17,
+          "logits": {
+            "cosine": 1.0000001192092896,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        },
+        {
+          "batch": 4,
+          "length": 128,
+          "logits": {
+            "cosine": 1.000000238418579,
+            "finite": true,
+            "max_abs": 0.0
+          },
+          "passed": true,
+          "route": {
+            "implementation": "torch-cuda-graph-reference-v1",
+            "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+            "requested": "auto",
+            "selected": "optimized"
+          },
+          "state_max_abs": 0.0,
+          "state_min_cosine": 0.9999998807907104
+        }
+      ],
+      "config_sha256": "b7a9d98f1499f2e66dc14f97c94944a4c1e61b3e4acd2f822f353825ed53f9a8",
+      "passed": true,
+      "path": "/home/wzu/codex-run/rwkv7-reference-v090/rwkv7-1.5b-hf"
+    }
+  },
+  "operator": [
+    {
+      "batch": 1,
+      "length": 1,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 1,
+      "length": 17,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 0.9999999403953552,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 1,
+      "length": 128,
+      "output": {
+        "cosine": 1.000000238418579,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 1.0000001192092896,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 1,
+      "output": {
+        "cosine": 1.0000001192092896,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 0.9999998807907104,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 17,
+      "output": {
+        "cosine": 0.9999999403953552,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 1.0000001192092896,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    },
+    {
+      "batch": 4,
+      "length": 128,
+      "output": {
+        "cosine": 1.0,
+        "finite": true,
+        "max_abs": 0.0
+      },
+      "passed": true,
+      "route": {
+        "implementation": "torch-cuda-graph-reference-v1",
+        "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+        "requested": "auto",
+        "selected": "optimized"
+      },
+      "state": {
+        "cosine": 0.9999998807907104,
+        "finite": true,
+        "max_abs": 0.0
+      }
+    }
+  ],
+  "passed": true,
+  "schema": "rwkv7-native-backend-validation-v1",
+  "seed": 42
+}

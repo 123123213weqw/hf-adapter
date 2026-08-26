@@ -1,0 +1,33 @@
+{
+  "checks": {
+    "finite": true,
+    "gradients_equal": true,
+    "logits_equal": true,
+    "loss_equal": true,
+    "nonzero_gradient": true,
+    "parameter_changed": true,
+    "route_reference": true
+  },
+  "code_sha": "074b2fdc1707216fe14ef458e9ca5aff01b41874",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "13.0",
+    "device": "NVIDIA GeForce RTX 4080",
+    "platform": "Linux-7.0.0-29-generic-x86_64-with-glibc2.39",
+    "python": "3.12.2 | packaged by conda-forge | (main, Feb 16 2024, 20:50:58) [GCC 12.3.0]",
+    "torch": "2.11.0+cu130"
+  },
+  "gradient_checkpointing": true,
+  "gradient_max_abs": 3.115234375,
+  "loss": 13.793362617492676,
+  "model": "/home/wzu/codex-run/rwkv7-reference-v090/rwkv7-0.1b-hf",
+  "passed": true,
+  "route": {
+    "implementation": "torch",
+    "reason": "the v1 graph backend is inference-only",
+    "requested": "auto",
+    "selected": "reference"
+  },
+  "schema": "rwkv7-native-backend-training-smoke-v1",
+  "seed": 42
+}

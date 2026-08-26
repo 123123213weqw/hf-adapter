@@ -1,0 +1,360 @@
+{
+  "backends": {
+    "auto": {
+      "cached_decode_b1": {
+        "max_ms": 1336.6751809953712,
+        "median_ms": 1332.1464140317403,
+        "milliseconds_per_step": 20.814787719245942,
+        "min_ms": 1328.0379709904082,
+        "peak_memory_bytes": 1033711104,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          1336.6751809953712,
+          1328.0379709904082,
+          1332.1464140317403
+        ],
+        "speedup_vs_reference": 1.0535541733036404,
+        "tokens_per_second": 48.04276716573822
+      },
+      "cached_decode_b4": {
+        "max_ms": 1363.8925030245446,
+        "median_ms": 1362.7521049929783,
+        "milliseconds_per_step": 21.293001640515286,
+        "min_ms": 1360.754007997457,
+        "peak_memory_bytes": 1137219584,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          1362.7521049929783,
+          1363.8925030245446,
+          1360.754007997457
+        ],
+        "speedup_vs_reference": 1.0523077445496258,
+        "tokens_per_second": 187.85514919554578
+      },
+      "generation_prefill_b1_t1": {
+        "max_ms": 21.48568199481815,
+        "median_ms": 21.395050978753716,
+        "min_ms": 21.33571804733947,
+        "peak_memory_bytes": 952428544,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          21.436451992485672,
+          21.48568199481815,
+          21.33571804733947,
+          21.395050978753716,
+          21.35160000761971
+        ],
+        "speedup_vs_reference": 1.05917658292364,
+        "tokens_per_second": 46.73978112943254
+      },
+      "generation_prefill_b1_t128": {
+        "max_ms": 92.82339597120881,
+        "median_ms": 92.33835997292772,
+        "min_ms": 92.22541999770328,
+        "peak_memory_bytes": 976315392,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          92.82339597120881,
+          92.33835997292772,
+          92.72298502037302,
+          92.27383299730718,
+          92.22541999770328
+        ],
+        "speedup_vs_reference": 2.47421458550847,
+        "tokens_per_second": 1386.206123192222
+      },
+      "generation_prefill_b1_t2048": {
+        "max_ms": 1208.2728249952197,
+        "median_ms": 1207.0654690032825,
+        "min_ms": 1206.7376470076852,
+        "peak_memory_bytes": 1322352128,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          1208.2728249952197,
+          1207.0654690032825,
+          1207.0351060247049,
+          1206.7376470076852,
+          1207.1806819876656
+        ],
+        "speedup_vs_reference": 2.812260237908858,
+        "tokens_per_second": 1696.676818773639
+      },
+      "generation_prefill_b1_t512": {
+        "max_ms": 314.719307993073,
+        "median_ms": 307.9592069843784,
+        "min_ms": 307.80377198243514,
+        "peak_memory_bytes": 1043087872,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          314.719307993073,
+          310.3878279798664,
+          307.9592069843784,
+          307.84446198958904,
+          307.80377198243514
+        ],
+        "speedup_vs_reference": 2.8045787994183127,
+        "tokens_per_second": 1662.5578595738227
+      },
+      "generation_prefill_b4_t128": {
+        "max_ms": 151.9827350275591,
+        "median_ms": 151.74652897985652,
+        "min_ms": 151.45514003233984,
+        "peak_memory_bytes": 1112832000,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          151.74652897985652,
+          151.61358704790473,
+          151.9827350275591,
+          151.789954979904,
+          151.45514003233984
+        ],
+        "speedup_vs_reference": 1.9527576082809515,
+        "tokens_per_second": 3374.0475214953026
+      },
+      "generation_prefill_b4_t512": {
+        "max_ms": 571.5934410109185,
+        "median_ms": 565.5991469975561,
+        "min_ms": 564.9277640040964,
+        "peak_memory_bytes": 1362210304,
+        "route": {
+          "implementation": "torch-cuda-graph-reference-v1",
+          "reason": "exact FP16 inference recurrence is CUDA-graph compatible",
+          "requested": "auto",
+          "selected": "optimized"
+        },
+        "samples_ms": [
+          571.5934410109185,
+          566.8357670074329,
+          565.5991469975561,
+          565.174580027815,
+          564.9277640040964
+        ],
+        "speedup_vs_reference": 2.0015947212724816,
+        "tokens_per_second": 3620.938982796679
+      }
+    },
+    "reference": {
+      "cached_decode_b1": {
+        "max_ms": 1403.8948850356974,
+        "median_ms": 1403.4884139546193,
+        "milliseconds_per_step": 21.929506468040927,
+        "min_ms": 1402.9745979933068,
+        "peak_memory_bytes": 953869824,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          1403.8948850356974,
+          1403.4884139546193,
+          1402.9745979933068
+        ],
+        "tokens_per_second": 45.60066144020865
+      },
+      "cached_decode_b4": {
+        "max_ms": 1434.5558360219002,
+        "median_ms": 1434.034593985416,
+        "milliseconds_per_step": 22.406790531022125,
+        "min_ms": 1433.1021389807574,
+        "peak_memory_bytes": 1030852608,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          1433.1021389807574,
+          1434.034593985416,
+          1434.5558360219002
+        ],
+        "tokens_per_second": 178.51731127945405
+      },
+      "generation_prefill_b1_t1": {
+        "max_ms": 22.8949380107224,
+        "median_ms": 22.66113698715344,
+        "min_ms": 22.653452993836254,
+        "peak_memory_bytes": 934846976,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          22.653452993836254,
+          22.66113698715344,
+          22.654027037788182,
+          22.8949380107224,
+          22.723195957951248
+        ],
+        "tokens_per_second": 44.12841246963461
+      },
+      "generation_prefill_b1_t128": {
+        "max_ms": 228.9397290442139,
+        "median_ms": 228.46491704694927,
+        "min_ms": 227.93441294925287,
+        "peak_memory_bytes": 947592192,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          228.9397290442139,
+          228.66063297260553,
+          228.45855000196025,
+          227.93441294925287,
+          228.46491704694927
+        ],
+        "tokens_per_second": 560.2610748927204
+      },
+      "generation_prefill_b1_t2048": {
+        "max_ms": 3459.409653034527,
+        "median_ms": 3394.5822230307385,
+        "min_ms": 3393.459691957105,
+        "peak_memory_bytes": 1236758528,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          3459.409653034527,
+          3393.461589002982,
+          3393.459691957105,
+          3394.5822230307385,
+          3402.0738800172694
+        ],
+        "tokens_per_second": 603.3143006833731
+      },
+      "generation_prefill_b1_t512": {
+        "max_ms": 864.2732199514285,
+        "median_ms": 863.6958629940636,
+        "min_ms": 862.5991580192931,
+        "peak_memory_bytes": 997472768,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          863.6958629940636,
+          862.5991580192931,
+          862.9189270432107,
+          864.2732199514285,
+          863.814577984158
+        ],
+        "tokens_per_second": 592.8012648168943
+      },
+      "generation_prefill_b4_t128": {
+        "max_ms": 296.4924839907326,
+        "median_ms": 296.3241889956407,
+        "min_ms": 295.9490430075675,
+        "peak_memory_bytes": 1018186240,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          296.1110370233655,
+          296.4924839907326,
+          296.3764520245604,
+          296.3241889956407,
+          295.9490430075675
+        ],
+        "tokens_per_second": 1727.8373450894085
+      },
+      "generation_prefill_b4_t512": {
+        "max_ms": 1132.6917679980397,
+        "median_ms": 1132.1002669865265,
+        "min_ms": 1131.9945170544088,
+        "peak_memory_bytes": 1256431616,
+        "route": {
+          "implementation": "torch",
+          "reason": "reference backend was explicitly requested",
+          "requested": "reference",
+          "selected": "reference"
+        },
+        "samples_ms": [
+          1132.6917679980397,
+          1131.9945170544088,
+          1132.6166040380485,
+          1132.093199994415,
+          1132.1002669865265
+        ],
+        "tokens_per_second": 1809.0270444432056
+      }
+    }
+  },
+  "code_sha": "074b2fdc1707216fe14ef458e9ca5aff01b41874",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "13.0",
+    "device": "NVIDIA GeForce RTX 4080",
+    "kernel_bridge": {
+      "api_version": 1,
+      "last_route": null,
+      "mode": "auto",
+      "package_available": true,
+      "package_error": null
+    },
+    "platform": "Linux-7.0.0-29-generic-x86_64-with-glibc2.39",
+    "python": "3.12.2 | packaged by conda-forge | (main, Feb 16 2024, 20:50:58) [GCC 12.3.0]",
+    "torch": "2.11.0+cu130",
+    "transformers": "5.8.0",
+    "triton": "3.6.0"
+  },
+  "model": "/home/wzu/.private/rwkv7-hf-4080/models/rwkv7-g1d-0.4b-hf",
+  "schema": "rwkv7-native-backend-speed-v1",
+  "settings": {
+    "cuda_graph": false,
+    "decode_tokens": 64,
+    "logits_to_keep": 1,
+    "repeats": 5,
+    "torch_compile": false,
+    "warmup": 2
+  }
+}
