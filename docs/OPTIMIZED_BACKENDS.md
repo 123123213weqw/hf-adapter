@@ -47,15 +47,26 @@ backend claims support, runtime failures propagate instead of being hidden by
 a retry.  This makes forced-backend validation meaningful and prevents broken
 kernel installations from silently producing misleading performance results.
 
-The promoted v1 lane captures the same readable PyTorch recurrence in reusable
-CUDA graphs.  It is bit-exact because it preserves operation order, tensor
-strides, cache layout, and mixed-precision boundaries while removing most
-per-token launch overhead.  It accepts CUDA FP16 inference with `K=V=64` and
-FP32 recurrent state.  More aggressive Triton scans stay on
-`perf/native-kernels-v0.8`: several 1.5B logits missed the strict
-`max_abs <= 0.15` gate despite passing cosine and greedy checks, so that code
-is not shipped in the clean companion wheel.  Training, BF16, FP32, and
-unsupported requests intentionally remain on the reference path.
+The package contains two explicitly selectable implementations:
+
+- `RWKV7_KERNEL_IMPL=graph` captures the readable PyTorch recurrence in
+  reusable CUDA graphs. This is the exact compatibility baseline, not the
+  native performance claim.
+- `RWKV7_KERNEL_IMPL=triton` selects the candidate
+  `native-triton-rank1-scan-v1` implementation.
+
+`RWKV7_KERNEL_IMPL=auto` currently resolves to the conservative graph lane.
+The Triton lane accepts CUDA FP16 inference with `K=V=64` and FP32 recurrent
+state. Training, BF16, FP32, unsupported shapes, and requests that require
+autograd remain on the readable reference path in backend `auto`.
+
+The Triton implementation is present for reproducible testing but is not yet
+the default release lane. V100, RTX 4080, and RTX 4090 all completed the
+forced-Triton 48-unit `lm_eval` matrix, while selected full-model FP16 logits
+still miss the strict `max_abs <= 0.15` diagnostic. Cache, state, finite,
+cosine, and 64-token greedy checks pass. Promotion therefore remains blocked
+on an explicit numerical-policy decision or a kernel correction; these
+reports must not be described as a clean numerical pass.
 
 ## Acceptance rule
 
@@ -89,3 +100,24 @@ public LoRA SFT, DPO, and GRPO example with both distributions installed.
 `evaluation/validate_finetune_smoke_runs.py` requires finite loss, nonzero
 gradients, changed adapter parameters, exact adapter save/reload, complete
 source/model provenance, and recorded `rwkv7-hf` / `rwkv7-kernels` versions.
+
+## Current forced-Triton evidence
+
+The compact RTX 4090 bundle is committed at
+[`results/native-backend/4090-cfeb5ae-triton`](../results/native-backend/4090-cfeb5ae-triton/README.md).
+It records the exact `cfeb5ae` code revision and
+`native-triton-rank1-scan-v1` route:
+
+- formal `lm_eval`: 48/48 units, batch 1/8 stability validator passed;
+- HF AutoModel/generation/save-reload and training fallback: passed;
+- one-step LoRA SFT, DPO, and GRPO: passed with exact adapter reload;
+- FLA operator/state/greedy gates: passed; model-logit diagnostic: outside
+  threshold;
+- 0.4B prefill versus the readable reference: 9.39x--54.99x faster for the
+  measured B1/B4, T128--2048 cases;
+- FLA remains faster at whole-model prefill/decode for the measured cases,
+  even though the native scan is faster than FLA at several short operator
+  shapes.
+
+The committed bundle excludes checkpoints, model weights, samples, W&B data,
+and large logs. `MANIFEST.sha256` covers every retained artifact.

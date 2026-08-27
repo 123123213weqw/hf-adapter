@@ -1,0 +1,69 @@
+{
+  "schema": "rwkv7-native-backend-triton-4090-final-corrected-v2",
+  "code_sha": "cfeb5aeca860ce444ebb3515a20cc22f7e2b090b",
+  "backend": "optimized",
+  "kernel_impl": "triton",
+  "route_implementation": "native-triton-rank1-scan-v1",
+  "checks": {
+    "precision_state_cache_greedy": false,
+    "speed": true,
+    "hf_ecosystem": true,
+    "training_fallback": true,
+    "fla_parity": false,
+    "fla_speed": true,
+    "full_lm_eval": true,
+    "sft_dpo_grpo": true
+  },
+  "passed": false,
+  "functional_hf_gates_passed": true,
+  "remaining_numerical_gates": {
+    "optimized_vs_reference_fp16": {
+      "passed": false,
+      "note": "Only selected full-model FP16 logits max-abs cases exceed 0.15; values are finite and cosine remains high; cached/greedy gates pass."
+    },
+    "clean_vs_fla_fp16": {
+      "passed": false,
+      "gates": {
+        "logits": false,
+        "state": true,
+        "operator": true,
+        "greedy": true
+      },
+      "status": "outside_thresholds",
+      "blocking": false,
+      "greedy_equal": true
+    }
+  },
+  "corrections": [
+    {
+      "attempt": "initial watcher",
+      "cause": "relative model symlinks were copied without their targets",
+      "resolution": "copy canonical model directories into the isolated model root"
+    },
+    {
+      "attempt": "lm_eval v1",
+      "cause": "--wandb-args was supplied but W&B was not installed",
+      "resolution": "clean lm_eval v2 without W&B arguments; merged formal validator passed 48/48 and batch 1/8 stability"
+    },
+    {
+      "attempt": "FLA v1/v2",
+      "cause": "Torch/Triton/torchvision version mismatches",
+      "resolution": "isolated Torch 2.7.1+cu126, torchvision 0.22.1+cu126, Triton 3.3.1; FLA speed completed and parity produced numerical evidence"
+    },
+    {
+      "attempt": "finetune v1",
+      "cause": "TRL missing in inference venv",
+      "resolution": "current cfeb5ae wheels installed into the existing TRL/PEFT train venv; SFT/DPO/GRPO validation passed"
+    }
+  ],
+  "evidence": {
+    "validation": "validation/validation-fp16.json",
+    "speed": "speed-0.4b-fp16.json",
+    "hf_ecosystem": "hf-ecosystem-fp16.json",
+    "training": "training-fp16.json",
+    "fla": "fla-v3",
+    "lm_eval": "lm-eval-triton-full-v2/merged/validation.json",
+    "finetune": "finetune-smoke-v2/validation.json"
+  },
+  "generated_at": "2026-08-27T00:27:34.495971+00:00"
+}

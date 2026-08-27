@@ -111,6 +111,10 @@ python evaluation/run_lm_eval_v100_pool.py \
 Local result JSON, sample logs, manifests, and exit status remain the release
 evidence; W&B is only a mirror of those optimized-backend runs.
 
+Do not pass `--wandb-args` in an environment where W&B is not installed. W&B
+is not required for formal acceptance, and omitting it does not change the
+model backend, dataset, metrics, or local provenance bundle.
+
 The pool runs all 24 batch-one units first with six processes per V100, then
 the higher-memory batch-eight units with two per V100. Every unit retains its
 own raw command, logs, manifest and result directory before the normal merge
@@ -123,3 +127,21 @@ difference must be at most 0.001; Wikitext perplexity relative difference must
 be at most 0.1%. The fixed execution shapes described in
 [`ARCHITECTURE.md`](ARCHITECTURE.md#numerical-reproducibility) prevent normal
 FP16 GEMM shape selection from changing close multiple-choice decisions.
+
+### Forced-Triton result status
+
+At code revision `cfeb5aeca860ce444ebb3515a20cc22f7e2b090b`, V100,
+RTX 4080, and RTX 4090 each completed all 48 formal units with
+`RWKV7_BACKEND=optimized` and `RWKV7_KERNEL_IMPL=triton`. The RTX 4090
+merged validator also passed the batch 1/8 metric and Wikitext perplexity
+stability rules with no failures. This proves framework execution and metric
+stability; it does not override the separate FP16 numerical diagnostics.
+
+The RTX 4090 compact report is
+[`results/native-backend/4090-cfeb5ae-triton`](../results/native-backend/4090-cfeb5ae-triton/README.md).
+Its final status deliberately remains `passed: false`: selected optimized vs
+reference logits exceed `max_abs=0.15`, and clean-vs-FLA misses only its model
+logits gate. Operator, recurrent state, cache, finite, cosine, and 64-token
+greedy checks pass. Keeping functional acceptance and numerical promotion as
+separate fields prevents a successful `lm_eval` run from hiding a kernel
+precision decision.

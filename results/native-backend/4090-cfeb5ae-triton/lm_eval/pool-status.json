@@ -1,0 +1,290 @@
+[
+  {
+    "unit": "0.1b-b1-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-hellaswag"
+  },
+  {
+    "unit": "0.4b-b1-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-hellaswag"
+  },
+  {
+    "unit": "1.5b-b1-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-lambada_openai"
+  },
+  {
+    "unit": "0.1b-b1-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-lambada_openai"
+  },
+  {
+    "unit": "0.4b-b1-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-lambada_openai"
+  },
+  {
+    "unit": "0.4b-b1-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-arc_challenge"
+  },
+  {
+    "unit": "1.5b-b1-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-arc_challenge"
+  },
+  {
+    "unit": "0.1b-b1-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-arc_challenge"
+  },
+  {
+    "unit": "1.5b-b1-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-hellaswag"
+  },
+  {
+    "unit": "1.5b-b1-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-arc_easy"
+  },
+  {
+    "unit": "0.1b-b1-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-arc_easy"
+  },
+  {
+    "unit": "0.4b-b1-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-arc_easy"
+  },
+  {
+    "unit": "0.1b-b1-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-piqa"
+  },
+  {
+    "unit": "1.5b-b1-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-piqa"
+  },
+  {
+    "unit": "0.4b-b1-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-piqa"
+  },
+  {
+    "unit": "0.1b-b1-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-winogrande"
+  },
+  {
+    "unit": "1.5b-b1-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-winogrande"
+  },
+  {
+    "unit": "0.4b-b1-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-winogrande"
+  },
+  {
+    "unit": "1.5b-b1-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-openbookqa"
+  },
+  {
+    "unit": "0.1b-b1-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-openbookqa"
+  },
+  {
+    "unit": "0.4b-b1-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-wikitext"
+  },
+  {
+    "unit": "0.4b-b1-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b1-openbookqa"
+  },
+  {
+    "unit": "1.5b-b1-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b1-wikitext"
+  },
+  {
+    "unit": "0.1b-b1-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b1-wikitext"
+  },
+  {
+    "unit": "1.5b-b8-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-hellaswag"
+  },
+  {
+    "unit": "0.4b-b8-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-hellaswag"
+  },
+  {
+    "unit": "0.1b-b8-hellaswag",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-hellaswag"
+  },
+  {
+    "unit": "1.5b-b8-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-lambada_openai"
+  },
+  {
+    "unit": "0.4b-b8-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-lambada_openai"
+  },
+  {
+    "unit": "0.1b-b8-lambada_openai",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-lambada_openai"
+  },
+  {
+    "unit": "1.5b-b8-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-arc_challenge"
+  },
+  {
+    "unit": "0.4b-b8-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-arc_challenge"
+  },
+  {
+    "unit": "0.1b-b8-arc_challenge",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-arc_challenge"
+  },
+  {
+    "unit": "1.5b-b8-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-arc_easy"
+  },
+  {
+    "unit": "0.4b-b8-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-arc_easy"
+  },
+  {
+    "unit": "0.1b-b8-arc_easy",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-arc_easy"
+  },
+  {
+    "unit": "1.5b-b8-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-piqa"
+  },
+  {
+    "unit": "0.4b-b8-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-piqa"
+  },
+  {
+    "unit": "0.1b-b8-piqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-piqa"
+  },
+  {
+    "unit": "1.5b-b8-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-winogrande"
+  },
+  {
+    "unit": "0.4b-b8-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-winogrande"
+  },
+  {
+    "unit": "0.1b-b8-winogrande",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-winogrande"
+  },
+  {
+    "unit": "1.5b-b8-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-openbookqa"
+  },
+  {
+    "unit": "0.4b-b8-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-openbookqa"
+  },
+  {
+    "unit": "0.1b-b8-openbookqa",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-openbookqa"
+  },
+  {
+    "unit": "1.5b-b8-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/1.5b-b8-wikitext"
+  },
+  {
+    "unit": "0.4b-b8-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.4b-b8-wikitext"
+  },
+  {
+    "unit": "0.1b-b8-wikitext",
+    "gpu": "0",
+    "exit_code": 0,
+    "shard": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/lm-eval-triton-full-v2/shards/0.1b-b8-wikitext"
+  }
+]

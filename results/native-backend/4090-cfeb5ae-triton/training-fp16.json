@@ -1,0 +1,33 @@
+{
+  "checks": {
+    "finite": true,
+    "gradients_equal": true,
+    "logits_equal": true,
+    "loss_equal": true,
+    "nonzero_gradient": true,
+    "parameter_changed": true,
+    "route_reference": true
+  },
+  "code_sha": "cfeb5aeca860ce444ebb3515a20cc22f7e2b090b",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "12.4",
+    "device": "NVIDIA GeForce RTX 4090",
+    "platform": "Linux-5.15.0-128-generic-x86_64-with-glibc2.35",
+    "python": "3.12.8 | packaged by conda-forge | (main, Dec  5 2024, 14:24:40) [GCC 13.3.0]",
+    "torch": "2.5.1+cu124"
+  },
+  "gradient_checkpointing": true,
+  "gradient_max_abs": 0.3681640625,
+  "loss": 12.543331146240234,
+  "model": "/home/ubuntu/codex-run/models-triton-cfeb5ae/rwkv7_04b_hf",
+  "passed": true,
+  "route": {
+    "implementation": "torch",
+    "reason": "the optimized recurrent protocol v1 is inference-only during training",
+    "requested": "auto",
+    "selected": "reference"
+  },
+  "schema": "rwkv7-native-backend-training-smoke-v1",
+  "seed": 42
+}

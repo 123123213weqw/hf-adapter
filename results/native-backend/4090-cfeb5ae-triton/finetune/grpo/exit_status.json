@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/finetune-smoke-v2/grpo/stdout.log",
+  "stderr": "/home/ubuntu/codex-run/results/native-backend-4090-triton-cfeb5ae/finetune-smoke-v2/grpo/stderr.log"
+}
