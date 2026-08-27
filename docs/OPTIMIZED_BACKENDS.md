@@ -103,9 +103,9 @@ source/model provenance, and recorded `rwkv7-hf` / `rwkv7-kernels` versions.
 
 ## Current forced-Triton evidence
 
-The compact RTX 4090 bundle is committed at
-[`results/native-backend/4090-cfeb5ae-triton`](../results/native-backend/4090-cfeb5ae-triton/README.md).
-It records the exact `cfeb5ae` code revision and
+The three-card summary and compact bundles are committed at
+[`results/native-backend/TRITON_CFEB5AE_SUMMARY.md`](../results/native-backend/TRITON_CFEB5AE_SUMMARY.md).
+They record the exact `cfeb5ae` code revision and
 `native-triton-rank1-scan-v1` route:
 
 - formal `lm_eval`: 48/48 units, batch 1/8 stability validator passed;

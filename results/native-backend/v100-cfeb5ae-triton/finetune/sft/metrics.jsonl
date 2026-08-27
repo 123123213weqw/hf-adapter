@@ -1,0 +1,3 @@
+{"step": 1, "loss": 2.9526, "grad_norm": 20.1796875, "learning_rate": 2e-05, "num_tokens": 32.0, "mean_token_accuracy": 0.3870967626571655, "epoch": 0.125}
+{"step": 1, "train_runtime": 1.6268, "train_samples_per_second": 0.615, "train_steps_per_second": 0.615, "total_flos": 27269775360.0, "train_loss": 2.9525575637817383, "epoch": 0.125}
+{"step": 1, "eval_loss": 2.454157590866089, "eval_runtime": 0.3898, "eval_samples_per_second": 5.13, "eval_steps_per_second": 5.13, "eval_num_tokens": 32.0, "eval_mean_token_accuracy": 0.4838709533214569, "epoch": 0.125}

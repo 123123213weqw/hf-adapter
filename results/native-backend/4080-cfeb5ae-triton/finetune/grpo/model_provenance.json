@@ -1,0 +1,17 @@
+{
+  "kind": "local",
+  "path": "/home/wzu/codex-run/models/native-v010-triton-cfeb5ae-v2/rwkv7_01b_hf",
+  "requested_revision": "local-cfeb5ae",
+  "resolved_revision": "626990cd4ecbcc4ed7104b991547225c5488a76a00d7ba4ae904579fb3123fa1",
+  "files": {
+    "cache_rwkv7.py": "8d2cc30f05d04eca4521026b1cb4683001c6f3e625a39e30451c74df092ba99b",
+    "config.json": "983e4fd48d1c5181864457c2dc745e622eb842fc212ac279b66c7bd16b2d38c1",
+    "configuration_rwkv7.py": "6b1b07047312e1fb9f63e501e9f5939f3d7e1d9ebf9b9ff526e1ac651a169726",
+    "kernel_bridge.py": "caaeb39e5f20c45fadc70a5e13f70e417e8b0367f965f2cff1a1713f731907c8",
+    "model.safetensors": "12d208adf2880927615656c2dc3f6fb6a3ea3120a9ed9fdfeeea55c841723d79",
+    "modeling_rwkv7.py": "4447d87896f61e8ead534618252522a2bb12bc4da3e95c926bf7d4160aeea877",
+    "ops_rwkv7.py": "e824001d19e02cf255d6116fc87e37aa3e5bed5e2fec82a7c29c02ea154e9ff2",
+    "tokenization_rwkv7.py": "b08da37df93e51806ad78985834286050da465251e9d3e04598e4a69d05280dd",
+    "tokenizer_config.json": "0a8bbc94fb5f6644b21e2653aea79407245a9a4b24d25c5f6a84698f5d9c5f27"
+  }
+}

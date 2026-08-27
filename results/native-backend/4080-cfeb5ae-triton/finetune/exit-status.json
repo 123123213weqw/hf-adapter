@@ -1,0 +1,1 @@
+{"sft_exit_code":0,"dpo_exit_code":0,"grpo_exit_code":0,"validation_exit_code":0,"finished":"2026-08-27T08:58:02+08:00","code_sha":"cfeb5aeca860ce444ebb3515a20cc22f7e2b090b","backend":"auto","kernel_impl":"triton","expected_training_route":"reference"}

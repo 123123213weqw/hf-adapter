@@ -1,0 +1,47 @@
+{
+  "schema": "rwkv7-native-backend-triton-4080-final-corrected-v3",
+  "code_sha": "cfeb5aeca860ce444ebb3515a20cc22f7e2b090b",
+  "backend": "optimized",
+  "kernel_impl": "triton",
+  "route_implementation": "native-triton-rank1-scan-v1",
+  "checks": {
+    "precision_state_cache_greedy": false,
+    "speed": true,
+    "hf_ecosystem": true,
+    "training_fallback": true,
+    "fla_parity": false,
+    "fla_speed": true,
+    "full_lm_eval": true,
+    "sft_dpo_grpo": true
+  },
+  "passed": false,
+  "functional_hf_gates_passed": true,
+  "remaining_numerical_gates": {
+    "optimized_vs_reference_fp16": {
+      "passed": false,
+      "note": "Only selected full-model FP16 logits max-abs cases exceed 0.15; cached/greedy and high-cosine gates pass."
+    },
+    "clean_vs_fla_fp16": {
+      "passed": false,
+      "gates": {
+        "logits": false,
+        "state": true,
+        "operator": true,
+        "greedy": true
+      },
+      "status": "outside_thresholds",
+      "blocking": false,
+      "greedy_equal": true
+    }
+  },
+  "evidence": {
+    "validation": "validation/validation-fp16.json",
+    "speed": "speed-0.4b-fp16.json",
+    "hf_ecosystem": "hf-ecosystem-fp16.json",
+    "training": "training-fp16.json",
+    "fla": "fla",
+    "lm_eval": "lm-eval-triton-full/merged/validation.json",
+    "finetune": "finetune-smoke-cfeb5ae/validation.json"
+  },
+  "generated_at": "2026-08-27T00:58:48.513482+00:00"
+}

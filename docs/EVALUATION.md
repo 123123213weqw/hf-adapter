@@ -137,9 +137,9 @@ merged validator also passed the batch 1/8 metric and Wikitext perplexity
 stability rules with no failures. This proves framework execution and metric
 stability; it does not override the separate FP16 numerical diagnostics.
 
-The RTX 4090 compact report is
-[`results/native-backend/4090-cfeb5ae-triton`](../results/native-backend/4090-cfeb5ae-triton/README.md).
-Its final status deliberately remains `passed: false`: selected optimized vs
+The cross-GPU compact report is
+[`results/native-backend/TRITON_CFEB5AE_SUMMARY.md`](../results/native-backend/TRITON_CFEB5AE_SUMMARY.md).
+Each final status deliberately remains `passed: false`: selected optimized vs
 reference logits exceed `max_abs=0.15`, and clean-vs-FLA misses only its model
 logits gate. Operator, recurrent state, cache, finite, cosine, and 64-token
 greedy checks pass. Keeping functional acceptance and numerical promotion as

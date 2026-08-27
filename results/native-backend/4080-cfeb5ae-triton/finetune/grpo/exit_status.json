@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "/home/wzu/codex-run/results/rwkv7-native-v010/4080-triton-cfeb5ae-v2/finetune-smoke-cfeb5ae/grpo/stdout.log",
+  "stderr": "/home/wzu/codex-run/results/rwkv7-native-v010/4080-triton-cfeb5ae-v2/finetune-smoke-cfeb5ae/grpo/stderr.log"
+}

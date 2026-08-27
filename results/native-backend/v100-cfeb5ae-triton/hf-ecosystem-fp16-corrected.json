@@ -1,0 +1,39 @@
+{
+  "checks": {
+    "auto_model_loaded": true,
+    "beam_generation": true,
+    "cached_decode": true,
+    "finite": true,
+    "finite_gradients": true,
+    "nonzero_gradient": true,
+    "optimized_inference": true,
+    "save_reload_equal": true,
+    "training_reference_fallback": true
+  },
+  "code_sha": "cfeb5aeca860ce444ebb3515a20cc22f7e2b090b",
+  "dtype": "fp16",
+  "environment": {
+    "cuda": "12.4",
+    "device": "Tesla V100-PCIE-32GB",
+    "dynamic_module": "transformers_modules.rwkv7_04b_hf.modeling_rwkv7",
+    "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.35",
+    "python": "3.11.15 (main, Jun 11 2026, 15:20:16) [GCC 14.3.0]",
+    "torch": "2.5.1+cu124"
+  },
+  "inference_route": {
+    "implementation": "native-triton-rank1-scan-v1",
+    "reason": "FP16 K=V=64 inference request is supported",
+    "requested": "auto",
+    "selected": "optimized"
+  },
+  "model": "/home/data/wangyue/models/rwkv7/reference-v090-6795a75/rwkv7-0.4b-hf",
+  "passed": true,
+  "schema": "rwkv7-native-backend-hf-ecosystem-smoke-v1",
+  "seed": 42,
+  "training_route": {
+    "implementation": "torch",
+    "reason": "the optimized recurrent protocol v1 is inference-only during training",
+    "requested": "auto",
+    "selected": "reference"
+  }
+}

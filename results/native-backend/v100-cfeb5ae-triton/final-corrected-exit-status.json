@@ -1,0 +1,34 @@
+{
+  "schema": "rwkv7-native-backend-triton-v100-final-corrected-v1",
+  "code_sha": "cfeb5aeca860ce444ebb3515a20cc22f7e2b090b",
+  "backend": "optimized",
+  "kernel_impl": "triton",
+  "checks": {
+    "precision_state_cache_greedy": false,
+    "speed": true,
+    "hf_ecosystem": true,
+    "training_fallback": true,
+    "full_lm_eval": true,
+    "sft": true,
+    "dpo": true,
+    "grpo": true,
+    "finetune_validation": true,
+    "fla_fused_inference_parity_speed": true
+  },
+  "passed": false,
+  "correction": {
+    "field": "checks.hf_ecosystem",
+    "old_value": false,
+    "new_value": true,
+    "reason": "The first HF ecosystem run observed an unrelated globally visible broken DeepSpeed installation; the isolated rerun disabled DeepSpeed discovery and exited 0.",
+    "evidence": "hf-ecosystem-corrected-exit-status.json"
+  },
+  "remaining_failure": "precision_state_cache_greedy is false only because several FP16 full-model logits max-abs values exceed 0.15; cached decode, greedy tokens, finite checks, and cosine gates pass.",
+  "external_limit": "Pinned FLA chunk/backward is not compilable by Triton on sm70; exact chunk/backward remains mandatory on 4080/4090.",
+  "source": {
+    "original_final": "final-exit-status.json",
+    "original_final_sha256": "b4eba85a0977398d1ed549a058d4ec33943838911fee734f566b003157fd70ee",
+    "hf_correction_sha256": "71d63ff11da12b73533cad09aa15c357878606b7c33670ec750132179bfb93ca"
+  },
+  "generated_at": "2026-08-26T18:33:31.103259+00:00"
+}

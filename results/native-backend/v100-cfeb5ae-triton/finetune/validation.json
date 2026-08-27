@@ -1,0 +1,37 @@
+{
+  "schema": "rwkv7-native-backend-finetune-smoke-v1",
+  "status": "passed",
+  "expected_step": 1,
+  "runs": {
+    "sft": {
+      "path": "/home/data/wangyue/results/rwkv7-native-backend-v010/triton-cfeb5ae-v1/v100/finetune-smoke/sft",
+      "status": "passed",
+      "global_step": 1,
+      "rwkv7_hf": "0.10.0.dev0",
+      "rwkv7_kernels": "0.10.0.dev0",
+      "changed_parameters": 72,
+      "adapter_reload_max_abs": 0.0,
+      "failures": []
+    },
+    "dpo": {
+      "path": "/home/data/wangyue/results/rwkv7-native-backend-v010/triton-cfeb5ae-v1/v100/finetune-smoke/dpo",
+      "status": "passed",
+      "global_step": 1,
+      "rwkv7_hf": "0.10.0.dev0",
+      "rwkv7_kernels": "0.10.0.dev0",
+      "changed_parameters": 72,
+      "adapter_reload_max_abs": 0.0,
+      "failures": []
+    },
+    "grpo": {
+      "path": "/home/data/wangyue/results/rwkv7-native-backend-v010/triton-cfeb5ae-v1/v100/finetune-smoke/grpo",
+      "status": "passed",
+      "global_step": 1,
+      "rwkv7_hf": "0.10.0.dev0",
+      "rwkv7_kernels": "0.10.0.dev0",
+      "changed_parameters": 72,
+      "adapter_reload_max_abs": 0.0,
+      "failures": []
+    }
+  }
+}
